@@ -45,7 +45,8 @@ jobs:
         run: |
           $version = $env:RELEASE_TAG -replace '^[vV]', ''
           $fullAssetName = "ImeTool-win-x64.exe"
-          $liteAssetName = "ImeTool-win-x64-lite.exe"
+          $liteExecutableAssetName = "ImeTool-win-x64-lite.exe"
+          $liteArchiveAssetName = "ImeTool-win-x64-lite.zip"
           New-Item -ItemType Directory -Path release-assets -Force | Out-Null
 
           dotnet publish src/ImeTool/ImeTool.csproj `
@@ -63,12 +64,17 @@ jobs:
             --self-contained false `
             --no-restore `
             -p:Version=$version `
-            -p:UpdateAssetName=$liteAssetName `
+            -p:UpdateAssetName=$liteArchiveAssetName `
             -o publish-lite
 
           Copy-Item "publish-full/ImeTool.exe" "release-assets/$fullAssetName" -Force
-          Copy-Item "publish-lite/ImeTool.exe" "release-assets/$liteAssetName" -Force
-          foreach ($assetName in @($fullAssetName, $liteAssetName)) {
+          Copy-Item "publish-lite/ImeTool.exe" "release-assets/$liteExecutableAssetName" -Force
+          Compress-Archive `
+            -Path "publish-lite/ImeTool.exe" `
+            -DestinationPath "release-assets/$liteArchiveAssetName" `
+            -CompressionLevel Optimal
+
+          foreach ($assetName in @($fullAssetName, $liteExecutableAssetName, $liteArchiveAssetName)) {
             $hash = (Get-FileHash "release-assets/$assetName" -Algorithm SHA256).Hash.ToLowerInvariant()
             "$hash *$assetName" | Set-Content "release-assets/$assetName.sha256" -Encoding ascii -NoNewline
           }
@@ -105,6 +111,8 @@ jobs:
             "release-assets/ImeTool-win-x64.exe.sha256" `
             "release-assets/ImeTool-win-x64-lite.exe" `
             "release-assets/ImeTool-win-x64-lite.exe.sha256" `
+            "release-assets/ImeTool-win-x64-lite.zip" `
+            "release-assets/ImeTool-win-x64-lite.zip.sha256" `
             --repo $env:GITHUB_REPOSITORY `
             --verify-tag `
             --title "ImeTool $env:RELEASE_TAG" `

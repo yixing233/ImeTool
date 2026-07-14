@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http;
+using System.IO.Compression;
 using ImeTool.Updates;
 
 namespace ImeTool.Tests.Updates;
@@ -27,6 +28,14 @@ public sealed class GitHubUpdateServiceTests
             {
               "name": "ImeTool-win-x64-lite.exe.sha256",
               "browser_download_url": "https://example.test/ImeTool-win-x64-lite.exe.sha256"
+            },
+            {
+              "name": "ImeTool-win-x64-lite.zip",
+              "browser_download_url": "https://example.test/ImeTool-win-x64-lite.zip"
+            },
+            {
+              "name": "ImeTool-win-x64-lite.zip.sha256",
+              "browser_download_url": "https://example.test/ImeTool-win-x64-lite.zip.sha256"
             }
           ]
         }
@@ -56,8 +65,36 @@ public sealed class GitHubUpdateServiceTests
             ReleaseJson,
             AppPackage.LightweightAssetName);
 
-        Assert.EndsWith("ImeTool-win-x64-lite.exe", release.DownloadUri.AbsoluteUri);
-        Assert.EndsWith("ImeTool-win-x64-lite.exe.sha256", release.ChecksumUri.AbsoluteUri);
+        Assert.EndsWith("ImeTool-win-x64-lite.zip", release.DownloadUri.AbsoluteUri);
+        Assert.EndsWith("ImeTool-win-x64-lite.zip.sha256", release.ChecksumUri.AbsoluteUri);
+    }
+
+    [Fact]
+    public void ExtractUpdatePayload_ExtractsOnlyExpectedExecutableFromZip()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        string archivePath = Path.Combine(directory, AppPackage.LightweightAssetName);
+        using (ZipArchive archive = ZipFile.Open(archivePath, ZipArchiveMode.Create))
+        {
+            ZipArchiveEntry executable = archive.CreateEntry("ImeTool.exe");
+            using (Stream stream = executable.Open())
+            {
+                stream.Write([0x4D, 0x5A, 0x01, 0x02]);
+            }
+
+            ZipArchiveEntry ignored = archive.CreateEntry("ignored.txt");
+            using (Stream ignoredStream = ignored.Open())
+            {
+                ignoredStream.Write([0x01]);
+            }
+        }
+
+        string extractedPath = GitHubUpdateService.ExtractUpdatePayload(archivePath);
+
+        Assert.True(File.Exists(extractedPath));
+        Assert.Equal([0x4D, 0x5A, 0x01, 0x02], File.ReadAllBytes(extractedPath));
+        Assert.False(File.Exists(archivePath));
     }
 
     [Theory]

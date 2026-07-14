@@ -29,10 +29,10 @@
 
 | 版本 | 体积 | 运行要求 |
 | --- | ---: | --- |
-| `ImeTool-win-x64-lite.exe` | 约 30 MB | 需要 .NET 9 Desktop Runtime，推荐 |
+| [`ImeTool-win-x64-lite.zip`](https://github.com/yixing233/ImeTool/releases/latest/download/ImeTool-win-x64-lite.zip) | 下载约 8.6 MB，解压约 30 MB | 需要 .NET 9 Desktop Runtime，推荐 |
 | `ImeTool-win-x64.exe` | 约 192 MB | 自包含，无需额外运行库 |
 
-两种构建会分别跟随对应的 GitHub Release 资源在线更新，不会在更新时互相切换。
+轻量 ZIP 解压后只有一个 `ImeTool.exe`。两种构建会分别跟随对应的 GitHub Release 资源在线更新，不会在更新时互相切换。
 
 ## 从源码运行
 
@@ -109,6 +109,8 @@ ImeTool-win-x64.exe
 ImeTool-win-x64.exe.sha256
 ImeTool-win-x64-lite.exe
 ImeTool-win-x64-lite.exe.sha256
+ImeTool-win-x64-lite.zip
+ImeTool-win-x64-lite.zip.sha256
 ```
 
 ## 技术栈

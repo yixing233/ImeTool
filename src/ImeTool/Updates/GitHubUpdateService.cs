@@ -1,4 +1,5 @@
 using System.IO;
+using System.IO.Compression;
 using System.Net;
 using System.Net.Http;
 using System.Reflection;
@@ -76,7 +77,8 @@ public static class AppVersion
 public static class AppPackage
 {
     public const string SelfContainedAssetName = "ImeTool-win-x64.exe";
-    public const string LightweightAssetName = "ImeTool-win-x64-lite.exe";
+    public const string LightweightAssetName = "ImeTool-win-x64-lite.zip";
+    public const string LegacyLightweightExecutableAssetName = "ImeTool-win-x64-lite.exe";
 
     public static string UpdateAssetName =>
         Assembly.GetExecutingAssembly()
@@ -219,7 +221,8 @@ public sealed class GitHubUpdateService : IDisposable
             }
 
             progress?.Report(1);
-            return destinationPath;
+            await destination.DisposeAsync();
+            return ExtractUpdatePayload(destinationPath);
         }
         catch
         {
@@ -280,6 +283,79 @@ public sealed class GitHubUpdateService : IDisposable
         }
 
         return candidate.ToUpperInvariant();
+    }
+
+    public static string ExtractUpdatePayload(string downloadedPath)
+    {
+        bool isZipArchive = downloadedPath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ||
+                            downloadedPath.EndsWith(".zip.download", StringComparison.OrdinalIgnoreCase);
+        if (!isZipArchive)
+        {
+            return downloadedPath;
+        }
+
+        string extractedPath = Path.Combine(
+            Path.GetDirectoryName(downloadedPath) ?? Path.GetTempPath(),
+            "ImeTool-lite-extracted.exe");
+        try
+        {
+            using ZipArchive archive = ZipFile.OpenRead(downloadedPath);
+            ZipArchiveEntry[] executableEntries = archive.Entries
+                .Where(entry => string.Equals(entry.FullName, "ImeTool.exe", StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+            if (executableEntries.Length != 1)
+            {
+                throw new InvalidDataException("轻量更新包中缺少唯一的 ImeTool.exe。");
+            }
+
+            ZipArchiveEntry executable = executableEntries[0];
+            if (executable.Length is <= 2 or > MaxExecutableBytes)
+            {
+                throw new InvalidDataException("轻量更新包中的程序文件大小无效。");
+            }
+
+            using Stream source = executable.Open();
+            using var destination = new FileStream(extractedPath, FileMode.Create, FileAccess.Write, FileShare.None);
+            byte[] buffer = new byte[81920];
+            long totalRead = 0;
+            while (true)
+            {
+                int read = source.Read(buffer, 0, buffer.Length);
+                if (read == 0)
+                {
+                    break;
+                }
+
+                totalRead += read;
+                if (totalRead > MaxExecutableBytes)
+                {
+                    throw new InvalidDataException("轻量更新包中的程序文件超过大小限制。");
+                }
+
+                destination.Write(buffer, 0, read);
+            }
+
+            destination.Flush();
+            if (totalRead != executable.Length)
+            {
+                throw new InvalidDataException("轻量更新包中的程序文件不完整。");
+            }
+
+            destination.Dispose();
+            using var header = new FileStream(extractedPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            if (header.ReadByte() != 'M' || header.ReadByte() != 'Z')
+            {
+                throw new InvalidDataException("轻量更新包中的程序文件格式无效。");
+            }
+        }
+        catch
+        {
+            File.Delete(extractedPath);
+            throw;
+        }
+
+        File.Delete(downloadedPath);
+        return extractedPath;
     }
 
     private static Uri CreateAbsoluteUri(string value) =>
