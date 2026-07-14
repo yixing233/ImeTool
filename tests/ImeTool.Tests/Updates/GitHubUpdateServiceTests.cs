@@ -23,10 +23,9 @@ public sealed class GitHubUpdateServiceTests
         """;
 
     [Fact]
-    public void DefaultBuildTargetsLightweightUpdateAsset()
+    public void DefaultBuildTargetsWindowsX64Package()
     {
         Assert.Equal(AppPackage.WindowsX64AssetName, AppPackage.UpdateAssetName);
-        Assert.True(AppPackage.IsLightweight);
     }
 
     [Theory]

@@ -1,6 +1,6 @@
 # ImeTool
 
-轻量级 Windows 输入法状态提示工具，在文本光标旁显示中文、英文及大写锁定状态，并按窗口自动记忆和恢复输入法状态。
+Windows 输入法状态提示工具，在文本光标旁显示中文、英文及大写锁定状态，并按窗口自动记忆和恢复输入法状态。
 
 ![ImeTool 图标](src/ImeTool/Assets/AppIconPreview.png)
 
@@ -22,7 +22,7 @@
 
 - Windows 10 / Windows 11
 - x64 系统
-- 轻量版需要安装 [.NET 9 Desktop Runtime x64](https://dotnet.microsoft.com/zh-cn/download/dotnet/9.0)
+- Windows x64 版本需要安装 [.NET 9 Desktop Runtime x64](https://dotnet.microsoft.com/zh-cn/download/dotnet/9.0)
 - 从源码构建需要 [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0)
 
 ## 下载版本

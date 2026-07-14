@@ -86,10 +86,6 @@ public static class AppPackage
                 StringComparison.Ordinal))
             ?.Value ?? WindowsX64AssetName;
 
-    public static bool IsLightweight => string.Equals(
-        UpdateAssetName,
-        WindowsX64AssetName,
-        StringComparison.OrdinalIgnoreCase);
 }
 
 public sealed class GitHubUpdateService : IDisposable
@@ -287,7 +283,7 @@ public sealed class GitHubUpdateService : IDisposable
 
         string extractedPath = Path.Combine(
             Path.GetDirectoryName(downloadedPath) ?? Path.GetTempPath(),
-            "ImeTool-lite-extracted.exe");
+            "ImeTool-update-extracted.exe");
         try
         {
             using ZipArchive archive = ZipFile.OpenRead(downloadedPath);
@@ -296,13 +292,13 @@ public sealed class GitHubUpdateService : IDisposable
                 .ToArray();
             if (executableEntries.Length != 1)
             {
-                throw new InvalidDataException("轻量更新包中缺少唯一的 ImeTool.exe。");
+                throw new InvalidDataException("更新包中缺少唯一的 ImeTool.exe。");
             }
 
             ZipArchiveEntry executable = executableEntries[0];
             if (executable.Length is <= 2 or > MaxExecutableBytes)
             {
-                throw new InvalidDataException("轻量更新包中的程序文件大小无效。");
+                throw new InvalidDataException("更新包中的程序文件大小无效。");
             }
 
             using Stream source = executable.Open();
@@ -320,7 +316,7 @@ public sealed class GitHubUpdateService : IDisposable
                 totalRead += read;
                 if (totalRead > MaxExecutableBytes)
                 {
-                    throw new InvalidDataException("轻量更新包中的程序文件超过大小限制。");
+                    throw new InvalidDataException("更新包中的程序文件超过大小限制。");
                 }
 
                 destination.Write(buffer, 0, read);
@@ -329,14 +325,14 @@ public sealed class GitHubUpdateService : IDisposable
             destination.Flush();
             if (totalRead != executable.Length)
             {
-                throw new InvalidDataException("轻量更新包中的程序文件不完整。");
+                throw new InvalidDataException("更新包中的程序文件不完整。");
             }
 
             destination.Dispose();
             using var header = new FileStream(extractedPath, FileMode.Open, FileAccess.Read, FileShare.Read);
             if (header.ReadByte() != 'M' || header.ReadByte() != 'Z')
             {
-                throw new InvalidDataException("轻量更新包中的程序文件格式无效。");
+                throw new InvalidDataException("更新包中的程序文件格式无效。");
             }
         }
         catch
