@@ -141,7 +141,8 @@ public partial class SettingsWindow : FluentWindow
         StartupBox.IsChecked = normalized.StartWithWindows;
         SilentStartBox.IsChecked = normalized.SilentStart;
         AutoCheckUpdatesBox.IsChecked = normalized.AutoCheckForUpdates;
-        UpdateStatusText.Text = $"当前版本 v{AppVersion.Display}";
+        string packageName = AppPackage.IsLightweight ? "轻量版" : "自包含版";
+        UpdateStatusText.Text = $"当前版本 v{AppVersion.Display} · {packageName}";
         UpdateActionButton.Content = "检查更新";
         _availableUpdate = null;
         SelectBackdrop(normalized.SettingsBackdrop);

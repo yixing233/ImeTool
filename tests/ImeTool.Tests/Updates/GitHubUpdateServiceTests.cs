@@ -19,10 +19,25 @@ public sealed class GitHubUpdateServiceTests
             {
               "name": "ImeTool-win-x64.exe.sha256",
               "browser_download_url": "https://example.test/ImeTool-win-x64.exe.sha256"
+            },
+            {
+              "name": "ImeTool-win-x64-lite.exe",
+              "browser_download_url": "https://example.test/ImeTool-win-x64-lite.exe"
+            },
+            {
+              "name": "ImeTool-win-x64-lite.exe.sha256",
+              "browser_download_url": "https://example.test/ImeTool-win-x64-lite.exe.sha256"
             }
           ]
         }
         """;
+
+    [Fact]
+    public void DefaultBuildTargetsLightweightUpdateAsset()
+    {
+        Assert.Equal(AppPackage.LightweightAssetName, AppPackage.UpdateAssetName);
+        Assert.True(AppPackage.IsLightweight);
+    }
 
     [Theory]
     [InlineData("v1.2.3", 1, 2, 3)]
@@ -32,6 +47,17 @@ public sealed class GitHubUpdateServiceTests
 
         Assert.True(parsed);
         Assert.Equal(new Version(major, minor, build), version);
+    }
+
+    [Fact]
+    public void ParseRelease_SelectsLightweightAssetsForLightweightBuild()
+    {
+        UpdateRelease release = GitHubUpdateService.ParseRelease(
+            ReleaseJson,
+            AppPackage.LightweightAssetName);
+
+        Assert.EndsWith("ImeTool-win-x64-lite.exe", release.DownloadUri.AbsoluteUri);
+        Assert.EndsWith("ImeTool-win-x64-lite.exe.sha256", release.ChecksumUri.AbsoluteUri);
     }
 
     [Theory]
@@ -48,7 +74,9 @@ public sealed class GitHubUpdateServiceTests
     [Fact]
     public void ParseRelease_SelectsExecutableAndChecksumAssets()
     {
-        UpdateRelease release = GitHubUpdateService.ParseRelease(ReleaseJson);
+        UpdateRelease release = GitHubUpdateService.ParseRelease(
+            ReleaseJson,
+            AppPackage.SelfContainedAssetName);
 
         Assert.Equal(new Version(1, 2, 3), release.Version);
         Assert.Equal("v1.2.3", release.TagName);
@@ -60,7 +88,7 @@ public sealed class GitHubUpdateServiceTests
     public async Task CheckForUpdatesAsync_ReturnsAvailableForNewerRelease()
     {
         using var client = new HttpClient(new StubHandler(HttpStatusCode.OK, ReleaseJson));
-        using var service = new GitHubUpdateService(client);
+        using var service = new GitHubUpdateService(client, AppPackage.SelfContainedAssetName);
 
         UpdateCheckResult result = await service.CheckForUpdatesAsync(new Version(1, 0, 0));
 
@@ -72,7 +100,7 @@ public sealed class GitHubUpdateServiceTests
     public async Task CheckForUpdatesAsync_HandlesRepositoryWithoutRelease()
     {
         using var client = new HttpClient(new StubHandler(HttpStatusCode.NotFound, "{}"));
-        using var service = new GitHubUpdateService(client);
+        using var service = new GitHubUpdateService(client, AppPackage.SelfContainedAssetName);
 
         UpdateCheckResult result = await service.CheckForUpdatesAsync(new Version(1, 0, 0));
 

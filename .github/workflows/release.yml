@@ -33,7 +33,7 @@ jobs:
           dotnet-version: "9.0.x"
 
       - name: Restore
-        run: dotnet restore ImeTool.sln
+        run: dotnet restore ImeTool.sln -r win-x64 -p:SelfContained=true
 
       - name: Test
         run: dotnet test ImeTool.sln -c Release --no-restore
@@ -44,19 +44,34 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           $version = $env:RELEASE_TAG -replace '^[vV]', ''
+          $fullAssetName = "ImeTool-win-x64.exe"
+          $liteAssetName = "ImeTool-win-x64-lite.exe"
+          New-Item -ItemType Directory -Path release-assets -Force | Out-Null
+
           dotnet publish src/ImeTool/ImeTool.csproj `
             -c Release `
             -r win-x64 `
             --self-contained true `
             --no-restore `
-            -p:Version=$version
+            -p:Version=$version `
+            -p:UpdateAssetName=$fullAssetName `
+            -o publish-full
 
-          $publishDirectory = "src/ImeTool/bin/Release/net9.0-windows10.0.17763.0/win-x64/publish"
-          $assetName = "ImeTool-win-x64.exe"
-          New-Item -ItemType Directory -Path release-assets -Force | Out-Null
-          Copy-Item "$publishDirectory/ImeTool.exe" "release-assets/$assetName" -Force
-          $hash = (Get-FileHash "release-assets/$assetName" -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash *$assetName" | Set-Content "release-assets/$assetName.sha256" -Encoding ascii -NoNewline
+          dotnet publish src/ImeTool/ImeTool.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained false `
+            --no-restore `
+            -p:Version=$version `
+            -p:UpdateAssetName=$liteAssetName `
+            -o publish-lite
+
+          Copy-Item "publish-full/ImeTool.exe" "release-assets/$fullAssetName" -Force
+          Copy-Item "publish-lite/ImeTool.exe" "release-assets/$liteAssetName" -Force
+          foreach ($assetName in @($fullAssetName, $liteAssetName)) {
+            $hash = (Get-FileHash "release-assets/$assetName" -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash *$assetName" | Set-Content "release-assets/$assetName.sha256" -Encoding ascii -NoNewline
+          }
 
       - name: Upload release assets
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -88,6 +103,8 @@ jobs:
           gh release create $env:RELEASE_TAG `
             "release-assets/ImeTool-win-x64.exe" `
             "release-assets/ImeTool-win-x64.exe.sha256" `
+            "release-assets/ImeTool-win-x64-lite.exe" `
+            "release-assets/ImeTool-win-x64-lite.exe.sha256" `
             --repo $env:GITHUB_REPOSITORY `
             --verify-tag `
             --title "ImeTool $env:RELEASE_TAG" `

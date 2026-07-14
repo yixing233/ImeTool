@@ -73,19 +73,43 @@ public static class AppVersion
         Math.Max(0, version.Build));
 }
 
+public static class AppPackage
+{
+    public const string SelfContainedAssetName = "ImeTool-win-x64.exe";
+    public const string LightweightAssetName = "ImeTool-win-x64-lite.exe";
+
+    public static string UpdateAssetName =>
+        Assembly.GetExecutingAssembly()
+            .GetCustomAttributes<AssemblyMetadataAttribute>()
+            .FirstOrDefault(attribute => string.Equals(
+                attribute.Key,
+                "UpdateAssetName",
+                StringComparison.Ordinal))
+            ?.Value ?? SelfContainedAssetName;
+
+    public static bool IsLightweight => string.Equals(
+        UpdateAssetName,
+        LightweightAssetName,
+        StringComparison.OrdinalIgnoreCase);
+}
+
 public sealed class GitHubUpdateService : IDisposable
 {
     public const string LatestReleaseApi = "https://api.github.com/repos/yixing233/ImeTool/releases/latest";
-    public const string ExecutableAssetName = "ImeTool-win-x64.exe";
-    public const string ChecksumAssetName = "ImeTool-win-x64.exe.sha256";
     private const long MaxExecutableBytes = 512L * 1024 * 1024;
     private const int MaxChecksumBytes = 4096;
 
     private readonly HttpClient _httpClient;
     private readonly bool _ownsHttpClient;
+    private readonly string _executableAssetName;
+    private readonly string _checksumAssetName;
 
-    public GitHubUpdateService(HttpClient? httpClient = null)
+    public GitHubUpdateService(HttpClient? httpClient = null, string? executableAssetName = null)
     {
+        _executableAssetName = string.IsNullOrWhiteSpace(executableAssetName)
+            ? AppPackage.UpdateAssetName
+            : Path.GetFileName(executableAssetName);
+        _checksumAssetName = _executableAssetName + ".sha256";
         _ownsHttpClient = httpClient is null;
         _httpClient = httpClient ?? new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
         if (_httpClient.DefaultRequestHeaders.UserAgent.Count == 0)
@@ -115,7 +139,7 @@ public sealed class GitHubUpdateService : IDisposable
 
         response.EnsureSuccessStatusCode();
         string json = await response.Content.ReadAsStringAsync(cancellationToken);
-        UpdateRelease release = ParseRelease(json);
+        UpdateRelease release = ParseRelease(json, _executableAssetName);
         UpdateAvailability availability = release.Version > current
             ? UpdateAvailability.Available
             : UpdateAvailability.UpToDate;
@@ -138,7 +162,7 @@ public sealed class GitHubUpdateService : IDisposable
             "Updates",
             release.TagName);
         Directory.CreateDirectory(updateDirectory);
-        string destinationPath = Path.Combine(updateDirectory, ExecutableAssetName + ".download");
+        string destinationPath = Path.Combine(updateDirectory, _executableAssetName + ".download");
 
         try
         {
@@ -204,8 +228,12 @@ public sealed class GitHubUpdateService : IDisposable
         }
     }
 
-    public static UpdateRelease ParseRelease(string json)
+    public static UpdateRelease ParseRelease(string json, string? executableAssetName = null)
     {
+        string expectedExecutable = string.IsNullOrWhiteSpace(executableAssetName)
+            ? AppPackage.UpdateAssetName
+            : Path.GetFileName(executableAssetName);
+        string expectedChecksum = expectedExecutable + ".sha256";
         using JsonDocument document = JsonDocument.Parse(json);
         JsonElement root = document.RootElement;
         string tagName = root.GetProperty("tag_name").GetString() ?? string.Empty;
@@ -224,11 +252,11 @@ public sealed class GitHubUpdateService : IDisposable
         {
             string name = asset.GetProperty("name").GetString() ?? string.Empty;
             string url = asset.GetProperty("browser_download_url").GetString() ?? string.Empty;
-            if (string.Equals(name, ExecutableAssetName, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(name, expectedExecutable, StringComparison.OrdinalIgnoreCase))
             {
                 executableUri = CreateAbsoluteUri(url);
             }
-            else if (string.Equals(name, ChecksumAssetName, StringComparison.OrdinalIgnoreCase))
+            else if (string.Equals(name, expectedChecksum, StringComparison.OrdinalIgnoreCase))
             {
                 checksumUri = CreateAbsoluteUri(url);
             }
@@ -237,8 +265,8 @@ public sealed class GitHubUpdateService : IDisposable
         return new UpdateRelease(
             version,
             tagName,
-            executableUri ?? throw new InvalidDataException($"Release 缺少 {ExecutableAssetName}。"),
-            checksumUri ?? throw new InvalidDataException($"Release 缺少 {ChecksumAssetName}。"),
+            executableUri ?? throw new InvalidDataException($"Release 缺少 {expectedExecutable}。"),
+            checksumUri ?? throw new InvalidDataException($"Release 缺少 {expectedChecksum}。"),
             CreateAbsoluteUri(releasePage),
             notes);
     }

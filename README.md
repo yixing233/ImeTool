@@ -22,7 +22,17 @@
 
 - Windows 10 / Windows 11
 - x64 系统
+- 轻量版需要安装 [.NET 9 Desktop Runtime x64](https://dotnet.microsoft.com/zh-cn/download/dotnet/9.0)
 - 从源码构建需要 [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0)
+
+## 下载版本
+
+| 版本 | 体积 | 运行要求 |
+| --- | ---: | --- |
+| `ImeTool-win-x64-lite.exe` | 约 30 MB | 需要 .NET 9 Desktop Runtime，推荐 |
+| `ImeTool-win-x64.exe` | 约 192 MB | 自包含，无需额外运行库 |
+
+两种构建会分别跟随对应的 GitHub Release 资源在线更新，不会在更新时互相切换。
 
 ## 从源码运行
 
@@ -55,8 +65,16 @@ dotnet test ImeTool.sln -c Release
 
 ## 发布
 
+轻量单文件版：
+
 ```powershell
-dotnet publish src\ImeTool\ImeTool.csproj -c Release -r win-x64 --self-contained true
+dotnet publish src\ImeTool\ImeTool.csproj -c Release -r win-x64 --self-contained false
+```
+
+自包含单文件版：
+
+```powershell
+dotnet publish src\ImeTool\ImeTool.csproj -c Release -r win-x64 --self-contained true -p:UpdateAssetName=ImeTool-win-x64.exe
 ```
 
 发布结果位于：
@@ -71,7 +89,7 @@ src/ImeTool/bin/Release/net9.0-windows10.0.17763.0/win-x64/publish/
 
 1. 更新 `src/ImeTool/ImeTool.csproj` 中的 `Version`。
 2. 提交代码并创建对应的版本标签。
-3. 推送标签，工作流会自动测试、发布单文件 EXE，并生成 SHA-256 校验文件。
+3. 推送标签，工作流会自动测试、发布轻量版与自包含版，并分别生成 SHA-256 校验文件。
 
 ```powershell
 git tag v1.0.0
@@ -89,6 +107,8 @@ https://api.github.com/repos/yixing233/ImeTool/releases/latest
 ```text
 ImeTool-win-x64.exe
 ImeTool-win-x64.exe.sha256
+ImeTool-win-x64-lite.exe
+ImeTool-win-x64-lite.exe.sha256
 ```
 
 ## 技术栈
