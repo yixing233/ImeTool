@@ -24,7 +24,7 @@ public partial class App : System.Windows.Application
 
         _controller = new AppController();
         _controller.Start();
-        ReportSuccessfulUpdateStartup(e.Args);
+        ScheduleSuccessfulUpdateStartupReport(e.Args);
 
         bool trayPreviewRequested = e.Args.Any(arg => string.Equals(arg, "--tray-menu", StringComparison.OrdinalIgnoreCase));
 
@@ -48,7 +48,7 @@ public partial class App : System.Windows.Application
         base.OnExit(e);
     }
 
-    private static void ReportSuccessfulUpdateStartup(IReadOnlyList<string> arguments)
+    private void ScheduleSuccessfulUpdateStartupReport(IReadOnlyList<string> arguments)
     {
         string? healthPath = StartupLaunchPolicy.GetArgumentValue(arguments, "--update-health-check");
         if (string.IsNullOrWhiteSpace(healthPath))
@@ -56,15 +56,21 @@ public partial class App : System.Windows.Application
             return;
         }
 
-        try
+        Dispatcher.BeginInvoke(async () =>
         {
-            File.WriteAllText(healthPath, "ok");
-            Diagnostics.DiagnosticsLog.Write("Update startup health check completed.");
-        }
-        catch (Exception exception)
-        {
-            Diagnostics.DiagnosticsLog.Write($"Unable to report update startup health: {exception.Message}");
-        }
+            // Require the WPF dispatcher and controller timer to run before acknowledging
+            // the new executable. The updater also observes the process after this signal.
+            await Task.Delay(TimeSpan.FromSeconds(2));
+            try
+            {
+                File.WriteAllText(healthPath, "ok");
+                Diagnostics.DiagnosticsLog.Write("Update startup health check completed.");
+            }
+            catch (Exception exception)
+            {
+                Diagnostics.DiagnosticsLog.Write($"Unable to report update startup health: {exception.Message}");
+            }
+        });
     }
 }
 

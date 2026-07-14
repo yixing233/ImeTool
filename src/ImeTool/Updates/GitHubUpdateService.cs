@@ -43,7 +43,13 @@ public static class AppVersion
             return false;
         }
 
-        string value = tag.Trim().TrimStart('v', 'V');
+        string trimmedTag = tag.Trim();
+        if (trimmedTag.Length < 2 || trimmedTag[0] is not ('v' or 'V'))
+        {
+            return false;
+        }
+
+        string value = trimmedTag[1..];
         string[] parts = value.Split('.');
         if (parts.Length != 3 ||
             !int.TryParse(parts[0], out int major) ||

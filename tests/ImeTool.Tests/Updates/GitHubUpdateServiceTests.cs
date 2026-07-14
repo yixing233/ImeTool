@@ -26,7 +26,6 @@ public sealed class GitHubUpdateServiceTests
 
     [Theory]
     [InlineData("v1.2.3", 1, 2, 3)]
-    [InlineData("1.2.3", 1, 2, 3)]
     public void TryParseVersionTag_HandlesGitHubTags(string tag, int major, int minor, int build)
     {
         bool parsed = AppVersion.TryParseTag(tag, out Version version);
@@ -38,6 +37,8 @@ public sealed class GitHubUpdateServiceTests
     [Theory]
     [InlineData("v2.0.0-beta.1")]
     [InlineData("v1.2.3.4")]
+    [InlineData("1.2.3")]
+    [InlineData("vv1.2.3")]
     [InlineData("vNext")]
     public void TryParseVersionTag_RejectsUnsupportedTags(string tag)
     {

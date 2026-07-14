@@ -100,7 +100,8 @@ public static class SelfUpdateLauncher
 
             $newProcess = $null
             try {
-                $newProcess = Start-Process -FilePath $TargetPath -ArgumentList @('--update-health-check', $HealthPath) -PassThru
+                $quotedHealthPath = '"' + $HealthPath + '"'
+                $newProcess = Start-Process -FilePath $TargetPath -ArgumentList @('--update-health-check', $quotedHealthPath) -PassThru
             }
             catch {}
 
@@ -112,6 +113,16 @@ public static class SelfUpdateLauncher
                 }
                 if ($null -ne $newProcess -and $newProcess.HasExited) { break }
                 Start-Sleep -Milliseconds 500
+            }
+
+            if ($healthy) {
+                for ($attempt = 0; $attempt -lt 10; $attempt++) {
+                    if ($null -eq $newProcess -or $newProcess.HasExited) {
+                        $healthy = $false
+                        break
+                    }
+                    Start-Sleep -Milliseconds 500
+                }
             }
 
             if ($healthy) {
