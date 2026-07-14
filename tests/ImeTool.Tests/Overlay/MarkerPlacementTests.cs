@@ -19,30 +19,30 @@ public sealed class MarkerPlacementTests
         MarkerPlacementResult result = MarkerPlacement.Calculate(
             Caret(500, 400), 48, 36, 6, 6, 6, WorkArea);
 
-        Assert.Equal(500, result.Left);
+        Assert.Equal(501, result.Left);
         Assert.Equal(420, result.Top);
         Assert.False(result.FlippedHorizontal);
         Assert.False(result.FlippedVertical);
     }
 
     [Fact]
-    public void Right_Edge_Flips_Marker_To_Caret_Left()
+    public void Right_Edge_Clamps_Without_Flipping_To_Opposite_Side()
     {
         MarkerPlacementResult result = MarkerPlacement.Calculate(
             Caret(1900, 400), 60, 36, 6, 6, 6, WorkArea);
 
-        Assert.Equal(1840, result.Left);
-        Assert.True(result.FlippedHorizontal);
+        Assert.Equal(1860, result.Left);
+        Assert.False(result.FlippedHorizontal);
     }
 
     [Fact]
-    public void Bottom_Edge_Flips_Marker_Above_Caret()
+    public void Bottom_Edge_Clamps_Without_Flipping_Above_Caret()
     {
         MarkerPlacementResult result = MarkerPlacement.Calculate(
             Caret(500, 1020), 48, 40, 6, 6, 6, WorkArea);
 
-        Assert.Equal(980, result.Top);
-        Assert.True(result.FlippedVertical);
+        Assert.Equal(1000, result.Top);
+        Assert.False(result.FlippedVertical);
     }
 
     [Fact]

@@ -39,7 +39,7 @@ public sealed class AppController : IDisposable
     private bool _markerTemporarilyHidden;
     private bool _settingsWindowOpen;
     private WindowKey? _activeInputWindow;
-    private ImeOpenStatus _activeImeStatus = ImeOpenStatus.Unknown;
+    private IntPtr _activeFocusHwnd;
     private bool _disposed;
 
     public AppController()
@@ -90,7 +90,7 @@ public sealed class AppController : IDisposable
 
         _timer = new DispatcherTimer
         {
-            Interval = TimeSpan.FromMilliseconds(120)
+            Interval = TimeSpan.FromMilliseconds(50)
         };
         _timer.Tick += OnTimerTick;
     }
@@ -146,6 +146,11 @@ public sealed class AppController : IDisposable
     {
         System.Windows.Application.Current.Dispatcher.BeginInvoke(() =>
         {
+            ClearActiveInputTarget();
+            _caretService.Invalidate();
+            _caretStabilizer.Reset();
+            _markerVisibility.Reset();
+            _overlay.HideMarker(immediate: true);
             if (_settings.Enabled)
             {
                 _focusTracker.HandleFocusChanged(hwnd);
@@ -243,7 +248,7 @@ public sealed class AppController : IDisposable
         {
             inputMode = _inferredInputModeTracker.Resolve(key, inputMode);
             _activeInputWindow = key;
-            _activeImeStatus = status;
+            _activeFocusHwnd = caret.FocusHwnd;
         }
 
         MarkerState markerState = MarkerStateResolver.Resolve(inputMode, _capsLockService.IsCapsLockOn());
@@ -262,7 +267,9 @@ public sealed class AppController : IDisposable
         }
 
         _overlay.Update(markerState, caret.ScreenRect, _settings.Marker, _settings.MarkerBehavior);
-        DiagnosticsLog.WriteThrottled($"Marker shown: state={markerState}, inputMode={inputMode}, imeStatus={status}, source={caret.Source}, hwnd=0x{caret.FocusHwnd.ToInt64():X}, caret=({caret.ScreenRect.Left},{caret.ScreenRect.Top},{caret.ScreenRect.Right},{caret.ScreenRect.Bottom}), style={_settings.Marker.Style}.");
+        DiagnosticsLog.WriteThrottled(
+            $"Marker shown: state={markerState}, inputMode={inputMode}, imeStatus={status}, source={caret.Source}, hwnd=0x{caret.FocusHwnd.ToInt64():X}, caret=({caret.ScreenRect.Left},{caret.ScreenRect.Top},{caret.ScreenRect.Right},{caret.ScreenRect.Bottom}), style={_settings.Marker.Style}.",
+            $"marker-shown:{markerState}:{caret.Source}:{caret.FocusHwnd}");
     }
 
     private void OnToggleEnabledRequested(object? sender, EventArgs e)
@@ -389,11 +396,12 @@ public sealed class AppController : IDisposable
 
     private void OnInputModeToggleRequested(object? sender, EventArgs e)
     {
-        System.Windows.Application.Current.Dispatcher.BeginInvoke(() =>
+        System.Windows.Application.Current.Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
         {
             if (!_settings.Enabled ||
-                _activeImeStatus != ImeOpenStatus.Open ||
-                _activeInputWindow is not WindowKey activeWindow)
+                _activeInputWindow is not WindowKey activeWindow ||
+                _activeFocusHwnd == IntPtr.Zero ||
+                !TsfImeService.IsChineseInputMethod(_activeFocusHwnd))
             {
                 return;
             }
@@ -402,6 +410,7 @@ public sealed class AppController : IDisposable
             if (mode != TextInputMode.Unknown)
             {
                 DiagnosticsLog.Write($"Input mode inferred from standalone Shift: window={activeWindow}, mode={mode}.");
+                OnTimerTick(this, EventArgs.Empty);
             }
         });
     }
@@ -409,7 +418,7 @@ public sealed class AppController : IDisposable
     private void ClearActiveInputTarget()
     {
         _activeInputWindow = null;
-        _activeImeStatus = ImeOpenStatus.Unknown;
+        _activeFocusHwnd = IntPtr.Zero;
     }
 
     private void OnExitRequested(object? sender, EventArgs e)
@@ -444,6 +453,11 @@ public sealed class AppController : IDisposable
         if (_imeService is IDisposable disposableImeService)
         {
             disposableImeService.Dispose();
+        }
+
+        if (_caretService is IDisposable disposableCaretService)
+        {
+            disposableCaretService.Dispose();
         }
     }
 }

@@ -12,7 +12,7 @@ public sealed class MarkerPositionTests
 
         (int x, int y) = MarkerPosition.FromCaretRect(rect);
 
-        Assert.Equal(16, x);
+        Assert.Equal(17, x);
         Assert.Equal(46, y);
     }
 
@@ -23,13 +23,13 @@ public sealed class MarkerPositionTests
 
         (int x, int y) = MarkerPosition.FromCaretRect(rect);
 
-        Assert.Equal(-194, x);
+        Assert.Equal(-193, x);
         Assert.Equal(46, y);
     }
 
     [Theory]
-    [InlineData(0, 0, 1, 20, 6, 6, 26)]
-    [InlineData(100, 100, 102, 130, 12, 112, 142)]
+    [InlineData(0, 0, 1, 20, 6, 7, 26)]
+    [InlineData(100, 100, 102, 130, 12, 114, 142)]
     public void FromCaretRect_Uses_Provided_Offset(int left, int top, int right, int bottom, int offset, int expectedX, int expectedY)
     {
         var rect = new NativeMethods.RECT { Left = left, Top = top, Right = right, Bottom = bottom };
@@ -41,15 +41,13 @@ public sealed class MarkerPositionTests
     }
 
     [Fact]
-    public void FromCaretRect_Does_Not_Use_Wide_Rectangle_Right_Edge()
+    public void FromCaretRect_Anchors_To_Exact_Caret_Right_Edge()
     {
-        // Some UI Automation providers return a selection or editor rectangle
-        // whose left edge is the caret origin while its right edge is the input boundary.
-        var rect = new NativeMethods.RECT { Left = 420, Top = 200, Right = 980, Bottom = 222 };
+        var rect = new NativeMethods.RECT { Left = 420, Top = 200, Right = 421, Bottom = 222 };
 
         (int x, int y) = MarkerPosition.FromCaretRect(rect, offsetX: 6, offsetY: 8);
 
-        Assert.Equal(426, x);
+        Assert.Equal(427, x);
         Assert.Equal(230, y);
     }
 }

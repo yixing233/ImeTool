@@ -90,6 +90,9 @@ public sealed class TsfImeService : ITsfImeService, IDisposable
     public static bool IsChineseLanguageId(ushort languageId) =>
         (languageId & 0x03FF) == ChinesePrimaryLanguageId;
 
+    public static bool IsChineseInputMethod(IntPtr hwnd) =>
+        TryGetTargetLanguage(hwnd, out ushort languageId) && IsChineseLanguageId(languageId);
+
     private static bool TryGetTargetLanguage(IntPtr hwnd, out ushort languageId)
     {
         languageId = 0;

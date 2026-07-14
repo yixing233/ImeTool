@@ -14,6 +14,7 @@ public static class NativeMethods
 
     public const uint SwpNoActivate = 0x0010;
     public const uint SwpShowWindow = 0x0040;
+    public const uint SmtoAbortIfHung = 0x0002;
 
     public const uint EventSystemForeground = 0x0003;
     public const uint EventObjectFocus = 0x8005;
@@ -252,6 +253,16 @@ public static class NativeMethods
 
     [DllImport("user32.dll", CharSet = CharSet.Auto)]
     public static extern IntPtr SendMessage(IntPtr hWnd, int msg, IntPtr wParam, IntPtr lParam);
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+    public static extern IntPtr SendMessageTimeout(
+        IntPtr hWnd,
+        int msg,
+        IntPtr wParam,
+        IntPtr lParam,
+        uint flags,
+        uint timeoutMilliseconds,
+        out IntPtr result);
 
     [DllImport("imm32.dll")]
     public static extern IntPtr ImmGetDefaultIMEWnd(IntPtr hWnd);

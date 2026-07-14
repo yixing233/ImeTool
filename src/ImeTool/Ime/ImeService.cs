@@ -14,6 +14,7 @@ public interface IImeService
 
 public sealed class ImeService : IImeService, IDisposable
 {
+    private const uint ImeMessageTimeoutMilliseconds = 25;
     private readonly ITsfImeService _tsfService;
 
     public ImeService()
@@ -143,11 +144,19 @@ public sealed class ImeService : IImeService, IDisposable
                 return ImeOpenStatus.Unknown;
             }
 
-            IntPtr result = NativeMethods.SendMessage(
+            IntPtr sent = NativeMethods.SendMessageTimeout(
                 imeWindow,
                 NativeMethods.WmImeControl,
                 NativeMethods.ImcGetOpenStatus,
-                IntPtr.Zero);
+                IntPtr.Zero,
+                NativeMethods.SmtoAbortIfHung,
+                ImeMessageTimeoutMilliseconds,
+                out IntPtr result);
+            if (sent == IntPtr.Zero)
+            {
+                return ImeOpenStatus.Unknown;
+            }
+
             return result == IntPtr.Zero ? ImeOpenStatus.Closed : ImeOpenStatus.Open;
         }
         catch (Exception ex)
@@ -197,12 +206,15 @@ public sealed class ImeService : IImeService, IDisposable
                 return false;
             }
 
-            NativeMethods.SendMessage(
+            IntPtr sent = NativeMethods.SendMessageTimeout(
                 imeWindow,
                 NativeMethods.WmImeControl,
                 NativeMethods.ImcSetOpenStatus,
-                isOpen ? new IntPtr(1) : IntPtr.Zero);
-            return true;
+                isOpen ? new IntPtr(1) : IntPtr.Zero,
+                NativeMethods.SmtoAbortIfHung,
+                ImeMessageTimeoutMilliseconds,
+                out _);
+            return sent != IntPtr.Zero;
         }
         catch (Exception ex)
         {

@@ -23,32 +23,67 @@ public interface ICaretService
     string? LastFailureReason { get; }
 
     bool TryGetCaret(out CaretSnapshot snapshot);
+
+    void Invalidate()
+    {
+    }
 }
 
-public sealed class CaretService : ICaretService
+public sealed class CaretService : ICaretService, IDisposable
 {
-    private const long NativeValidationCacheMilliseconds = 250;
-    private IntPtr _lastValidatedNativeFocus;
-    private long _lastNativeValidationTimestamp;
-    private bool _lastNativeValidationResult;
+    private readonly UiAutomationCaretReader _uiAutomationReader;
+
+    public CaretService()
+    {
+        _uiAutomationReader = new UiAutomationCaretReader(ReadCaretFromUiAutomation);
+    }
 
     public string? LastFailureReason { get; private set; }
 
     public bool TryGetCaret(out CaretSnapshot snapshot)
     {
-        if (TryGetCaretFromGuiThreadInfo(out snapshot))
+        bool foundNative = TryGetCaretFromGuiThreadInfo(out CaretSnapshot nativeSnapshot);
+
+        IntPtr foreground = NativeMethods.GetForegroundWindow();
+        UiAutomationCaretReadResult automationResult = default;
+        bool hasAutomationResult = foreground != IntPtr.Zero &&
+                                   _uiAutomationReader.TryGetResult(
+                                       foreground,
+                                       out automationResult);
+        if (foundNative &&
+            hasAutomationResult &&
+            automationResult.TrustNativeCaret &&
+            IsSameTargetProcess(nativeSnapshot.FocusHwnd, automationResult.FocusHwnd))
         {
+            snapshot = nativeSnapshot;
             LastFailureReason = null;
             return true;
         }
 
-        bool found = TryGetCaretFromUiAutomation(out snapshot);
-        if (found)
+        if (hasAutomationResult && automationResult.Found)
         {
+            snapshot = automationResult.Snapshot;
             LastFailureReason = null;
+            return true;
         }
 
-        return found;
+        snapshot = default;
+        LastFailureReason = foreground == IntPtr.Zero
+            ? "No foreground window is available."
+            : hasAutomationResult
+                ? automationResult.FailureReason ?? "UI Automation returned no exact caret."
+                : "UI Automation caret lookup is pending.";
+        return false;
+    }
+
+    public void Invalidate()
+    {
+        _uiAutomationReader.Invalidate();
+    }
+
+    public void Dispose()
+    {
+        _uiAutomationReader.Dispose();
     }
 
     private bool TryGetCaretFromGuiThreadInfo(out CaretSnapshot snapshot)
@@ -99,7 +134,7 @@ public sealed class CaretService : ICaretService
             Bottom = bottomRight.Y
         };
 
-        if (rect.Width <= 0 || rect.Height <= 0 || rect.Height > 200 || !IsNativeCaretTargetAllowed(info.hwndFocus))
+        if (rect.Width <= 0 || rect.Height <= 0 || rect.Height > 200)
         {
             return false;
         }
@@ -108,90 +143,57 @@ public sealed class CaretService : ICaretService
         return true;
     }
 
-    private bool IsNativeCaretTargetAllowed(IntPtr focusHwnd)
+    private static bool IsSameTargetProcess(IntPtr leftHwnd, IntPtr rightHwnd)
     {
-        long now = Environment.TickCount64;
-        if (focusHwnd == _lastValidatedNativeFocus &&
-            now - _lastNativeValidationTimestamp < NativeValidationCacheMilliseconds)
+        if (leftHwnd == IntPtr.Zero || rightHwnd == IntPtr.Zero)
         {
-            return _lastNativeValidationResult;
-        }
-
-        bool result = ValidateNativeCaretTarget(focusHwnd);
-        _lastValidatedNativeFocus = focusHwnd;
-        _lastNativeValidationTimestamp = now;
-        _lastNativeValidationResult = result;
-        return result;
-    }
-
-    private static bool ValidateNativeCaretTarget(IntPtr focusHwnd)
-    {
-        try
-        {
-            AutomationElement focused = AutomationElement.FocusedElement;
-            if (focused is null)
-            {
-                return true;
-            }
-
-            IntPtr automationHwnd = new(focused.Current.NativeWindowHandle);
-            if (automationHwnd != IntPtr.Zero)
-            {
-                NativeMethods.GetWindowThreadProcessId(focusHwnd, out uint nativeProcessId);
-                NativeMethods.GetWindowThreadProcessId(automationHwnd, out uint automationProcessId);
-                if (nativeProcessId != 0 && automationProcessId != 0 && nativeProcessId != automationProcessId)
-                {
-                    return false;
-                }
-            }
-
-            bool supportsTextPattern = focused.TryGetCurrentPattern(TextPattern.Pattern, out object textPatternObject);
-            bool supportsValuePattern = focused.TryGetCurrentPattern(ValuePattern.Pattern, out object valuePatternObject);
-            bool? isReadOnly = GetIsReadOnly(
-                textPatternObject,
-                supportsTextPattern,
-                valuePatternObject,
-                supportsValuePattern);
-
-            return CaretTargetClassifier.ShouldTrustNativeCaret(
-                focused.Current.ControlType.ProgrammaticName,
-                supportsTextPattern,
-                supportsValuePattern,
-                focused.Current.IsPassword,
-                focused.Current.IsKeyboardFocusable,
-                isReadOnly,
-                focused.Current.LocalizedControlType,
-                focused.Current.FrameworkId);
-        }
-        catch
-        {
-            // An unavailable UIA provider must not break native Win32 editors.
             return true;
         }
+
+        NativeMethods.GetWindowThreadProcessId(leftHwnd, out uint leftProcessId);
+        NativeMethods.GetWindowThreadProcessId(rightHwnd, out uint rightProcessId);
+        return leftProcessId == 0 || rightProcessId == 0 || leftProcessId == rightProcessId;
     }
 
-    private bool TryGetCaretFromUiAutomation(out CaretSnapshot snapshot)
+    private static UiAutomationCaretReadResult ReadCaretFromUiAutomation(IntPtr expectedForeground)
     {
-        snapshot = default;
-
         try
         {
             AutomationElement focused = AutomationElement.FocusedElement;
             if (focused is null)
             {
-                LastFailureReason = "UI Automation returned no focused element.";
-                return false;
+                return UiAutomationCaretReadResult.Failure(
+                    "UI Automation returned no focused element.");
             }
 
             List<AutomationElement> candidates = GetCandidateElements(focused);
             string? focusedFailure = null;
+            bool trustNativeCaret = false;
+            IntPtr trustedFocusHwnd = IntPtr.Zero;
             foreach (AutomationElement candidate in candidates)
             {
                 try
                 {
-                    if (TryGetCaretFromElement(candidate, out snapshot, out string? failureReason))
+                    if (TryGetCaretFromElement(
+                            candidate,
+                            out CaretSnapshot snapshot,
+                            out string? failureReason,
+                            out bool candidateTrustsNativeCaret,
+                            out IntPtr candidateFocusHwnd))
                     {
-                        return true;
+                        if (NativeMethods.GetForegroundWindow() != expectedForeground)
+                        {
+                            return UiAutomationCaretReadResult.Failure(
+                                "Foreground window changed during UI Automation caret lookup.");
+                        }
+
+                        return UiAutomationCaretReadResult.Success(snapshot);
+                    }
+
+                    if (candidateTrustsNativeCaret)
+                    {
+                        trustNativeCaret = true;
+                        trustedFocusHwnd = candidateFocusHwnd;
                     }
 
                     focusedFailure ??= failureReason;
@@ -202,13 +204,17 @@ public sealed class CaretService : ICaretService
                 }
             }
 
-            LastFailureReason = focusedFailure ?? $"Focused UIA element was not editable: {DescribeElement(focused)}.";
-            return false;
+            return UiAutomationCaretReadResult.Failure(
+                focusedFailure ?? $"Focused UIA element was not editable: {DescribeElement(focused)}.",
+                trustNativeCaret,
+                trustedFocusHwnd);
         }
         catch (Exception exception)
         {
-            LastFailureReason = $"UI Automation failed with {exception.GetType().Name}: {exception.Message}";
-            return false;
+            return UiAutomationCaretReadResult.Failure(
+                $"UI Automation failed with {exception.GetType().Name}: {exception.Message}",
+                trustNativeCaret: true,
+                focusHwnd: expectedForeground);
         }
     }
 
@@ -280,10 +286,14 @@ public sealed class CaretService : ICaretService
     private static bool TryGetCaretFromElement(
         AutomationElement element,
         out CaretSnapshot snapshot,
-        out string? failureReason)
+        out string? failureReason,
+        out bool trustNativeCaret,
+        out IntPtr focusHwnd)
     {
         snapshot = default;
         failureReason = null;
+        trustNativeCaret = false;
+        focusHwnd = IntPtr.Zero;
 
         bool supportsTextPattern = element.TryGetCurrentPattern(TextPattern.Pattern, out object textPatternObject);
         bool supportsValuePattern = element.TryGetCurrentPattern(ValuePattern.Pattern, out object valuePatternObject);
@@ -301,6 +311,20 @@ public sealed class CaretService : ICaretService
             isReadOnly,
             element.Current.LocalizedControlType,
             element.Current.FrameworkId);
+        trustNativeCaret = CaretTargetClassifier.ShouldTrustNativeCaret(
+            element.Current.ControlType.ProgrammaticName,
+            supportsTextPattern,
+            supportsValuePattern,
+            element.Current.IsPassword,
+            element.Current.IsKeyboardFocusable,
+            isReadOnly,
+            element.Current.LocalizedControlType,
+            element.Current.FrameworkId);
+        focusHwnd = new IntPtr(element.Current.NativeWindowHandle);
+        if (focusHwnd == IntPtr.Zero)
+        {
+            focusHwnd = NativeMethods.GetForegroundWindow();
+        }
 
         if (!isLikelyTextInput)
         {
@@ -310,19 +334,16 @@ public sealed class CaretService : ICaretService
             return false;
         }
 
-        IntPtr focusHwnd = new(element.Current.NativeWindowHandle);
-        if (focusHwnd == IntPtr.Zero)
-        {
-            focusHwnd = NativeMethods.GetForegroundWindow();
-        }
-
         if (focusHwnd == IntPtr.Zero)
         {
             failureReason = "Editable UIA element had no native or foreground window.";
             return false;
         }
 
-        if (TryGetTextPatternRect(textPatternObject, supportsTextPattern, out NativeMethods.RECT textRect))
+        if (TryGetTextPatternRect(
+                textPatternObject,
+                supportsTextPattern,
+                out NativeMethods.RECT textRect))
         {
             snapshot = new CaretSnapshot(
                 focusHwnd,
@@ -332,31 +353,8 @@ public sealed class CaretService : ICaretService
             return true;
         }
 
-        System.Windows.Rect bounding = element.Current.BoundingRectangle;
-        if (bounding.IsEmpty ||
-            bounding.Width <= 0 ||
-            bounding.Height <= 0 ||
-            double.IsInfinity(bounding.Left) ||
-            double.IsNaN(bounding.Left))
-        {
-            failureReason = $"Editable UIA element had no usable bounds: {DescribeElement(element)}.";
-            return false;
-        }
-
-        int left = (int)Math.Round(bounding.Left + 4);
-        int top = (int)Math.Round(bounding.Top + Math.Max(4, Math.Min(bounding.Height - 4, 18)));
-        snapshot = new CaretSnapshot(
-            focusHwnd,
-            focusHwnd,
-            new NativeMethods.RECT
-            {
-                Left = left,
-                Top = top,
-                Right = left + 1,
-                Bottom = top + 18
-            },
-            CaretSource.UiAutomationElementBounds);
-        return true;
+        failureReason = $"Editable UIA element exposed no exact caret geometry: {DescribeElement(element)}.";
+        return false;
     }
 
     private static bool? GetIsReadOnly(
@@ -416,20 +414,23 @@ public sealed class CaretService : ICaretService
             return false;
         }
 
-        System.Windows.Rect[] rectangles = selections[0].GetBoundingRectangles();
-        if (rectangles.Length == 0 || rectangles[0].IsEmpty)
+        TextPatternRange collapsed = selections[0].Clone();
+        collapsed.MoveEndpointByRange(
+            TextPatternRangeEndpoint.Start,
+            collapsed,
+            TextPatternRangeEndpoint.End);
+        return TryGetRangeRect(collapsed, out rect);
+    }
+
+    private static bool TryGetRangeRect(TextPatternRange range, out NativeMethods.RECT rect)
+    {
+        rect = default;
+        System.Windows.Rect[] rectangles = range.GetBoundingRectangles();
+        if (rectangles.Length == 0)
         {
             return false;
         }
 
-        System.Windows.Rect first = rectangles[0];
-        rect = new NativeMethods.RECT
-        {
-            Left = (int)Math.Round(first.Left),
-            Top = (int)Math.Round(first.Top),
-            Right = (int)Math.Round(first.Right <= first.Left ? first.Left + 1 : first.Right),
-            Bottom = (int)Math.Round(first.Bottom <= first.Top ? first.Top + 18 : first.Bottom)
-        };
-        return !rect.IsEmpty;
+        return CaretGeometry.TryCreateExactRect(rectangles[0], out rect);
     }
 }

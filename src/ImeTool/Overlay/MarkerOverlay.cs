@@ -120,7 +120,7 @@ public sealed class MarkerOverlay : Window
                 settings.OffsetY,
                 workArea)
             : new MarkerPlacementResult(
-                caretRect.Left + settings.OffsetX - pixelOffsetX,
+                caretRect.Right + settings.OffsetX - pixelOffsetX,
                 caretRect.Bottom + settings.OffsetY - pixelOffsetY,
                 false,
                 false);
