@@ -22,16 +22,18 @@ Windows 输入法状态提示工具，在文本光标旁显示中文、英文及
 
 - Windows 10 / Windows 11
 - x64 系统
-- Windows x64 版本需要安装 [.NET 9 Desktop Runtime x64](https://dotnet.microsoft.com/zh-cn/download/dotnet/9.0)
+- 安装程序会在需要时自动下载并安装 .NET 9 Desktop Runtime x64；此时系统可能显示 UAC 并要求管理员权限
 - 从源码构建需要 [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0)
 
 ## 下载版本
 
 | 下载 | 体积 | 运行要求 |
 | --- | ---: | --- |
-| [`ImeTool_Windows_x64.zip`](https://github.com/yixing233/ImeTool/releases/latest/download/ImeTool_Windows_x64.zip) | 下载约 8.6 MB，解压约 30 MB | 需要 .NET 9 Desktop Runtime |
+| [`ImeTool_Windows_x64.exe`](https://github.com/yixing233/ImeTool/releases/latest/download/ImeTool_Windows_x64.exe) | 约 7.2 MB | Windows 10/11 x64 |
 
-ZIP 解压后只有一个 `ImeTool.exe`，在线更新也使用相同的 ZIP 资源。
+ImeTool 本体默认按当前用户安装到 `%LocalAppData%\Programs\ImeTool`，不需要管理员权限，并提供开始菜单快捷方式和标准卸载入口。若系统缺少 .NET 9 Desktop Runtime，安装该系统运行库时可能需要管理员权限。用户设置仍保存在 `%AppData%\ImeTool`，覆盖安装或升级不会删除设置。
+
+> 从 v1.0.5 或更早的 ZIP 版本迁移时，需要手动运行一次安装程序。安装完成后的版本将使用安装包自动更新。
 
 ## 从源码运行
 
@@ -65,13 +67,22 @@ dotnet test ImeTool.sln -c Release
 ## 发布
 
 ```powershell
-dotnet publish src\ImeTool\ImeTool.csproj -c Release -r win-x64 --self-contained false
+dotnet publish src\ImeTool\ImeTool.csproj `
+  -c Release `
+  -r win-x64 `
+  --self-contained false `
+  -o artifacts\installer-publish
+
+.\installer\build-installer.ps1 `
+  -Version 1.0.6 `
+  -PublishDir artifacts\installer-publish `
+  -OutputDir artifacts\installer
 ```
 
-发布结果位于：
+构建安装包需要 Inno Setup 6，结果位于：
 
 ```text
-src/ImeTool/bin/Release/net9.0-windows10.0.17763.0/win-x64/publish/
+artifacts/installer/ImeTool_Windows_x64.exe
 ```
 
 ### 创建 GitHub Release
@@ -80,26 +91,26 @@ src/ImeTool/bin/Release/net9.0-windows10.0.17763.0/win-x64/publish/
 
 1. 更新 `src/ImeTool/ImeTool.csproj` 中的 `Version`。
 2. 提交代码并创建对应的版本标签。
-3. 推送标签，工作流会自动测试并发布 `ImeTool_Windows_x64.zip`。
+3. 推送标签，工作流会自动测试并发布 `ImeTool_Windows_x64.exe`。
 
 ```powershell
 git tag v1.0.0
 git push origin v1.0.0
 ```
 
-应用通过以下接口检查最新版：
+应用优先通过以下不受 GitHub REST API 配额影响的页面检查最新版：
 
 ```text
-https://api.github.com/repos/yixing233/ImeTool/releases/latest
+https://github.com/yixing233/ImeTool/releases/latest
 ```
 
 Release 只包含：
 
 ```text
-ImeTool_Windows_x64.zip
+ImeTool_Windows_x64.exe
 ```
 
-客户端使用 GitHub 提供的 Release Asset SHA-256 digest 校验下载内容。
+客户端使用 GitHub 提供的 Release Asset SHA-256 digest 校验安装包，然后以静默升级模式启动 Inno Setup。
 
 ## 技术栈
 
@@ -115,5 +126,6 @@ ImeTool_Windows_x64.zip
 ImeTool
 ├─ src/ImeTool          应用程序
 ├─ tests/ImeTool.Tests  自动化测试
+├─ installer            Inno Setup 安装与构建脚本
 └─ ImeTool.sln          Visual Studio 解决方案
 ```

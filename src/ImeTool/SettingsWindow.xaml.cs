@@ -482,7 +482,7 @@ public partial class SettingsWindow : FluentWindow
     {
         if (!SelfUpdateLauncher.CanInstall)
         {
-            UpdateStatusText.Text = "当前运行方式不支持自动替换程序文件";
+            UpdateStatusText.Text = "当前系统不支持自动运行更新安装包";
             return;
         }
 
@@ -543,7 +543,7 @@ public partial class SettingsWindow : FluentWindow
         HttpRequestException => "无法连接 GitHub",
         TaskCanceledException => "连接超时",
         InvalidDataException => exception.Message,
-        UnauthorizedAccessException => "没有替换程序文件的权限",
+        UnauthorizedAccessException => "没有运行更新安装包的权限",
         _ => exception.Message
     };
 

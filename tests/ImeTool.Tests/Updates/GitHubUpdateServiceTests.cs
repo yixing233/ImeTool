@@ -1,6 +1,6 @@
 using System.Net;
 using System.Net.Http;
-using System.IO.Compression;
+using System.Security.Cryptography;
 using ImeTool.Updates;
 
 namespace ImeTool.Tests.Updates;
@@ -14,8 +14,8 @@ public sealed class GitHubUpdateServiceTests
           "body": "Release notes",
           "assets": [
             {
-              "name": "ImeTool_Windows_x64.zip",
-              "browser_download_url": "https://example.test/ImeTool_Windows_x64.zip",
+              "name": "ImeTool_Windows_x64.exe",
+              "browser_download_url": "https://example.test/ImeTool_Windows_x64.exe",
               "digest": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
             }
           ]
@@ -43,38 +43,57 @@ public sealed class GitHubUpdateServiceTests
     {
         UpdateRelease release = GitHubUpdateService.ParseRelease(ReleaseJson);
 
-        Assert.EndsWith("ImeTool_Windows_x64.zip", release.DownloadUri.AbsoluteUri);
+        Assert.EndsWith("ImeTool_Windows_x64.exe", release.DownloadUri.AbsoluteUri);
         Assert.Equal(
             "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF",
             release.Sha256);
     }
 
     [Fact]
-    public void ExtractUpdatePayload_ExtractsOnlyExpectedExecutableFromZip()
+    public void ValidateInstallerPayload_AcceptsWindowsExecutable()
     {
         string directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
-        string archivePath = Path.Combine(directory, AppPackage.WindowsX64AssetName);
-        using (ZipArchive archive = ZipFile.Open(archivePath, ZipArchiveMode.Create))
-        {
-            ZipArchiveEntry executable = archive.CreateEntry("ImeTool.exe");
-            using (Stream stream = executable.Open())
-            {
-                stream.Write([0x4D, 0x5A, 0x01, 0x02]);
-            }
+        string installerPath = Path.Combine(directory, AppPackage.WindowsX64AssetName);
+        File.WriteAllBytes(installerPath, [0x4D, 0x5A, 0x01, 0x02]);
 
-            ZipArchiveEntry ignored = archive.CreateEntry("ignored.txt");
-            using (Stream ignoredStream = ignored.Open())
-            {
-                ignoredStream.Write([0x01]);
-            }
-        }
+        string validatedPath = GitHubUpdateService.ValidateInstallerPayload(installerPath);
 
-        string extractedPath = GitHubUpdateService.ExtractUpdatePayload(archivePath);
+        Assert.Equal(installerPath, validatedPath);
+    }
 
-        Assert.True(File.Exists(extractedPath));
-        Assert.Equal([0x4D, 0x5A, 0x01, 0x02], File.ReadAllBytes(extractedPath));
-        Assert.False(File.Exists(archivePath));
+    [Fact]
+    public void ValidateInstallerPayload_RejectsNonExecutablePayload()
+    {
+        string path = Path.GetTempFileName();
+        File.WriteAllText(path, "not an installer");
+
+        Assert.Throws<InvalidDataException>(() =>
+            GitHubUpdateService.ValidateInstallerPayload(path));
+    }
+
+    [Fact]
+    public async Task DownloadUpdateAsync_SavesValidatedInstallerWithExeExtension()
+    {
+        byte[] payload = [0x4D, 0x5A, 0x01, 0x02];
+        string checksum = Convert.ToHexString(SHA256.HashData(payload));
+        string tagName = $"v-test-{Guid.NewGuid():N}";
+        using var client = new HttpClient(new RoutingHandler(_ =>
+            Response(HttpStatusCode.OK, new ByteArrayContent(payload))));
+        using var service = new GitHubUpdateService(client);
+        var release = new UpdateRelease(
+            new Version(2, 0, 0),
+            tagName,
+            new Uri("https://example.test/ImeTool_Windows_x64.exe"),
+            checksum,
+            new Uri("https://example.test/release"),
+            string.Empty);
+
+        string installerPath = await service.DownloadUpdateAsync(release);
+
+        Assert.EndsWith(AppPackage.WindowsX64AssetName, installerPath);
+        Assert.Equal(payload, File.ReadAllBytes(installerPath));
+        Directory.Delete(Path.GetDirectoryName(installerPath)!, recursive: true);
     }
 
     [Theory]
@@ -110,7 +129,7 @@ public sealed class GitHubUpdateServiceTests
             {
                 return Response(
                     HttpStatusCode.OK,
-                    $"<li><a href=\"/yixing233/ImeTool/releases/download/v1.2.3/ImeTool_Windows_x64.zip\">ImeTool_Windows_x64.zip</a><span>sha256:{digest}</span></li>" +
+                    $"<li><a href=\"/yixing233/ImeTool/releases/download/v1.2.3/ImeTool_Windows_x64.exe\">ImeTool_Windows_x64.exe</a><span>sha256:{digest}</span></li>" +
                     $"<li><a href=\"/yixing233/ImeTool/releases/download/v1.2.3/other.zip\">other.zip</a><span>sha256:{unrelatedDigest}</span></li>");
             }
 
@@ -123,7 +142,7 @@ public sealed class GitHubUpdateServiceTests
         Assert.Equal(UpdateAvailability.Available, result.Availability);
         Assert.Equal(new Version(1, 2, 3), result.Release?.Version);
         Assert.Equal(
-            "https://github.com/yixing233/ImeTool/releases/download/v1.2.3/ImeTool_Windows_x64.zip",
+            "https://github.com/yixing233/ImeTool/releases/download/v1.2.3/ImeTool_Windows_x64.exe",
             result.Release?.DownloadUri.AbsoluteUri);
         Assert.DoesNotContain(requestedUris, uri => uri.AbsoluteUri == GitHubUpdateService.LatestReleaseApi);
     }
@@ -151,7 +170,7 @@ public sealed class GitHubUpdateServiceTests
 
             return Response(
                 HttpStatusCode.OK,
-                "<li><a href=\"/yixing233/ImeTool/releases/download/v1.2.3/ImeTool_Windows_x64.zip\">ImeTool_Windows_x64.zip</a></li>" +
+                "<li><a href=\"/yixing233/ImeTool/releases/download/v1.2.3/ImeTool_Windows_x64.exe\">ImeTool_Windows_x64.exe</a></li>" +
                 $"<li><a href=\"/yixing233/ImeTool/releases/download/v1.2.3/other.zip\">other.zip</a><span>sha256:{unrelatedDigest}</span></li>");
         }));
         using var service = new GitHubUpdateService(client);

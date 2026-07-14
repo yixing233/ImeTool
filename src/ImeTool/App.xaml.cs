@@ -1,6 +1,7 @@
 using System.IO;
 using System.Threading;
 using System.Windows;
+using ImeTool.Updates;
 
 namespace ImeTool;
 
@@ -25,6 +26,7 @@ public partial class App : System.Windows.Application
         _controller = new AppController();
         _controller.Start();
         ScheduleSuccessfulUpdateStartupReport(e.Args);
+        ScheduleUpdateCacheCleanup();
 
         bool trayPreviewRequested = e.Args.Any(arg => string.Equals(arg, "--tray-menu", StringComparison.OrdinalIgnoreCase));
 
@@ -70,6 +72,15 @@ public partial class App : System.Windows.Application
             {
                 Diagnostics.DiagnosticsLog.Write($"Unable to report update startup health: {exception.Message}");
             }
+        });
+    }
+
+    private void ScheduleUpdateCacheCleanup()
+    {
+        Dispatcher.BeginInvoke(async () =>
+        {
+            await Task.Delay(TimeSpan.FromSeconds(30));
+            await Task.Run(() => UpdateCacheCleaner.Cleanup());
         });
     }
 }

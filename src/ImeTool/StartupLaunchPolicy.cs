@@ -7,7 +7,8 @@ public static class StartupLaunchPolicy
         string[] args = arguments.ToArray();
         bool settingsRequested = HasArgument(args, "--settings");
         bool trayPreviewRequested = HasArgument(args, "--tray-menu");
-        return settingsRequested || (!trayPreviewRequested && !silentStart);
+        bool silentRequested = HasArgument(args, "--silent");
+        return settingsRequested || (!trayPreviewRequested && !silentRequested && !silentStart);
     }
 
     private static bool HasArgument(IEnumerable<string> arguments, string expected) =>

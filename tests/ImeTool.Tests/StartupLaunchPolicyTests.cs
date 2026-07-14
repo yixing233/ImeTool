@@ -27,6 +27,12 @@ public sealed class StartupLaunchPolicyTests
     }
 
     [Fact]
+    public void Explicit_Silent_Argument_Does_Not_Open_Settings()
+    {
+        Assert.False(StartupLaunchPolicy.ShouldShowSettings(["--silent"], silentStart: false));
+    }
+
+    [Fact]
     public void Reads_Update_Health_Check_Path()
     {
         string? path = StartupLaunchPolicy.GetArgumentValue(
