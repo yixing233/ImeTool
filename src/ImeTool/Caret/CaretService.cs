@@ -175,12 +175,17 @@ public sealed class CaretService : ICaretService, IDisposable
             bool trustNativeCaret = false;
             IntPtr trustedFocusHwnd = IntPtr.Zero;
             NativeMethods.RECT? trustedTextHostBounds = null;
-            foreach (AutomationElement candidate in candidates)
+            for (int candidateIndex = 0; candidateIndex < candidates.Count; candidateIndex++)
             {
+                AutomationElement candidate = candidates[candidateIndex];
                 try
                 {
+                    bool allowEmptyTextHostFallback =
+                        candidateIndex == 0 &&
+                        candidate.Current.ControlType == ControlType.Edit;
                     if (TryGetCaretFromElement(
                             candidate,
+                            allowEmptyTextHostFallback,
                             out CaretSnapshot snapshot,
                             out string? failureReason,
                             out bool candidateTrustsNativeCaret,
@@ -295,6 +300,7 @@ public sealed class CaretService : ICaretService, IDisposable
 
     private static bool TryGetCaretFromElement(
         AutomationElement element,
+        bool allowEmptyTextHostFallback,
         out CaretSnapshot snapshot,
         out string? failureReason,
         out bool trustNativeCaret,
@@ -360,6 +366,8 @@ public sealed class CaretService : ICaretService, IDisposable
         if (TryGetTextPatternRect(
                 textPatternObject,
                 supportsTextPattern,
+                textHostBounds,
+                allowEmptyTextHostFallback,
                 out NativeMethods.RECT textRect))
         {
             snapshot = new CaretSnapshot(
@@ -473,7 +481,12 @@ public sealed class CaretService : ICaretService, IDisposable
         }
     }
 
-    private static bool TryGetTextPatternRect(object textPatternObject, bool supportsTextPattern, out NativeMethods.RECT rect)
+    private static bool TryGetTextPatternRect(
+        object textPatternObject,
+        bool supportsTextPattern,
+        NativeMethods.RECT? textHostBounds,
+        bool allowEmptyTextHostFallback,
+        out NativeMethods.RECT rect)
     {
         rect = default;
 
@@ -483,17 +496,82 @@ public sealed class CaretService : ICaretService, IDisposable
         }
 
         TextPatternRange[] selections = textPattern.GetSelection();
-        if (selections.Length == 0)
+        if (selections.Length != 1)
+        {
+            return false;
+        }
+
+        int startToEndComparison = selections[0].CompareEndpoints(
+            TextPatternRangeEndpoint.Start,
+            selections[0],
+            TextPatternRangeEndpoint.End);
+        if (!TextPatternCaretPolicy.CanResolveSelection(
+                selections.Length,
+                startToEndComparison))
         {
             return false;
         }
 
         TextPatternRange collapsed = selections[0].Clone();
-        collapsed.MoveEndpointByRange(
-            TextPatternRangeEndpoint.Start,
-            collapsed,
-            TextPatternRangeEndpoint.End);
-        return TryGetRangeRect(collapsed, out rect);
+        if (TryGetRangeRect(collapsed, out rect) ||
+            TryGetAdjacentCharacterCaret(collapsed, out rect))
+        {
+            return true;
+        }
+
+        string documentText = textPattern.DocumentRange.GetText(1);
+        if (allowEmptyTextHostFallback &&
+            documentText.Length == 0 &&
+            textHostBounds is NativeMethods.RECT host)
+        {
+            return CaretGeometry.TryCreateEmptyTextHostRect(
+                new System.Windows.Rect(host.Left, host.Top, host.Width, host.Height),
+                out rect);
+        }
+
+        return false;
+    }
+
+    private static bool TryGetAdjacentCharacterCaret(
+        TextPatternRange collapsed,
+        out NativeMethods.RECT rect)
+    {
+        rect = default;
+
+        TextPatternRange nextCharacter = collapsed.Clone();
+        if (nextCharacter.MoveEndpointByUnit(
+                TextPatternRangeEndpoint.End,
+                TextUnit.Character,
+                1) > 0 &&
+            TryGetRangeEdge(nextCharacter, trailingEdge: false, out rect))
+        {
+            return true;
+        }
+
+        TextPatternRange previousCharacter = collapsed.Clone();
+        return previousCharacter.MoveEndpointByUnit(
+                   TextPatternRangeEndpoint.Start,
+                   TextUnit.Character,
+                   -1) < 0 &&
+               TryGetRangeEdge(previousCharacter, trailingEdge: true, out rect);
+    }
+
+    private static bool TryGetRangeEdge(
+        TextPatternRange range,
+        bool trailingEdge,
+        out NativeMethods.RECT rect)
+    {
+        rect = default;
+        System.Windows.Rect[] rectangles = range.GetBoundingRectangles();
+        if (rectangles.Length == 0)
+        {
+            return false;
+        }
+
+        System.Windows.Rect characterRect = trailingEdge
+            ? rectangles[^1]
+            : rectangles[0];
+        return CaretGeometry.TryCreateFromTextEdge(characterRect, trailingEdge, out rect);
     }
 
     private static bool TryGetRangeRect(TextPatternRange range, out NativeMethods.RECT rect)

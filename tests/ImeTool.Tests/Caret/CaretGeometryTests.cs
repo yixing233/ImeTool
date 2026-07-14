@@ -115,4 +115,47 @@ public sealed class CaretGeometryTests
 
         Assert.False(accepted);
     }
+
+    [Theory]
+    [InlineData(false, 500)]
+    [InlineData(true, 511)]
+    public void CharacterRectangle_CreatesCaretAtRequestedTextEdge(
+        bool trailingEdge,
+        int expectedX)
+    {
+        bool accepted = CaretGeometry.TryCreateFromTextEdge(
+            new System.Windows.Rect(500, 300, 11, 28),
+            trailingEdge,
+            out var caret);
+
+        Assert.True(accepted);
+        Assert.Equal(expectedX, caret.Left);
+        Assert.Equal(expectedX + 1, caret.Right);
+        Assert.Equal(300, caret.Top);
+        Assert.Equal(328, caret.Bottom);
+    }
+
+    [Fact]
+    public void EmptyTextHost_CreatesCaretAtInputStart()
+    {
+        bool accepted = CaretGeometry.TryCreateEmptyTextHostRect(
+            new System.Windows.Rect(480, 300, 300, 42),
+            out var caret);
+
+        Assert.True(accepted);
+        Assert.Equal(480, caret.Left);
+        Assert.Equal(481, caret.Right);
+        Assert.Equal(300, caret.Top);
+        Assert.Equal(342, caret.Bottom);
+    }
+
+    [Fact]
+    public void TallEmptyTextHost_IsNotTreatedAsSingleLineCaret()
+    {
+        bool accepted = CaretGeometry.TryCreateEmptyTextHostRect(
+            new System.Windows.Rect(480, 300, 300, 120),
+            out _);
+
+        Assert.False(accepted);
+    }
 }

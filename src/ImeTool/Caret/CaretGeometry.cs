@@ -6,6 +6,7 @@ public static class CaretGeometry
 {
     private const int MinimumReliableNativeCaretHeight = 8;
     private const int BoundsTolerance = 4;
+    private const double MaximumEmptySingleLineHostHeight = 64;
 
     public static bool TryCreateExactRect(System.Windows.Rect source, out NativeMethods.RECT rect)
     {
@@ -74,4 +75,62 @@ public static class CaretGeometry
                source.Top >= host.Top - BoundsTolerance &&
                source.Bottom <= host.Bottom + BoundsTolerance;
     }
+
+    public static bool TryCreateFromTextEdge(
+        System.Windows.Rect source,
+        bool trailingEdge,
+        out NativeMethods.RECT rect)
+    {
+        rect = default;
+        if (!IsUsableScreenRect(source))
+        {
+            return false;
+        }
+
+        double edge = trailingEdge ? source.Right : source.Left;
+        int left = (int)Math.Round(edge);
+        int top = (int)Math.Round(source.Top);
+        int bottom = Math.Max(top + 1, (int)Math.Round(source.Bottom));
+        rect = new NativeMethods.RECT
+        {
+            Left = left,
+            Top = top,
+            Right = left + 1,
+            Bottom = bottom
+        };
+        return true;
+    }
+
+    public static bool TryCreateEmptyTextHostRect(
+        System.Windows.Rect source,
+        out NativeMethods.RECT rect)
+    {
+        rect = default;
+        if (!IsUsableScreenRect(source) ||
+            source.Height > MaximumEmptySingleLineHostHeight)
+        {
+            return false;
+        }
+
+        int left = (int)Math.Round(source.Left);
+        int top = (int)Math.Round(source.Top);
+        int bottom = Math.Max(top + 1, (int)Math.Round(source.Bottom));
+        rect = new NativeMethods.RECT
+        {
+            Left = left,
+            Top = top,
+            Right = left + 1,
+            Bottom = bottom
+        };
+        return true;
+    }
+
+    private static bool IsUsableScreenRect(System.Windows.Rect source) =>
+        !source.IsEmpty &&
+        source.Width > 0 &&
+        source.Height > 0 &&
+        double.IsFinite(source.Left) &&
+        double.IsFinite(source.Top) &&
+        double.IsFinite(source.Right) &&
+        double.IsFinite(source.Bottom);
 }
