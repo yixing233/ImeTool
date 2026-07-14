@@ -21,8 +21,18 @@ public static class SelfUpdateLauncher
         }
     }
 
-    public static ProcessStartInfo CreateInstallerStartInfo(string downloadedInstaller)
+    public static ProcessStartInfo CreateInstallerStartInfo(
+        string downloadedInstaller,
+        int? updateProcessId = null)
     {
+        int processId = updateProcessId ?? Environment.ProcessId;
+        if (processId <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(updateProcessId),
+                "更新进程 ID 必须大于 0。");
+        }
+
         var startInfo = new ProcessStartInfo
         {
             FileName = downloadedInstaller,
@@ -34,6 +44,7 @@ public static class SelfUpdateLauncher
         startInfo.ArgumentList.Add("/NORESTART");
         startInfo.ArgumentList.Add("/CLOSEAPPLICATIONS");
         startInfo.ArgumentList.Add("/UPDATE=1");
+        startInfo.ArgumentList.Add($"/UPDATEPID={processId}");
         return startInfo;
     }
 }

@@ -1,5 +1,5 @@
 #ifndef MyAppVersion
-  #define MyAppVersion "1.0.7"
+  #define MyAppVersion "1.0.8"
 #endif
 #ifndef PublishDir
   #define PublishDir "..\src\ImeTool\bin\Release\net9.0-windows10.0.17763.0\win-x64\publish"
@@ -110,13 +110,23 @@ end;
 
 function CloseRunningImeTool: Boolean;
 var
+  UpdateProcessId: Integer;
+  TaskkillArguments: String;
   ResultCode: Integer;
 begin
-  { A portable copy can run outside the install directory, so Restart Manager cannot find it
-    by target-file usage. Close all same-user ImeTool instances explicitly. }
+  { The update installer is a child of ImeTool. Never use taskkill /T here because that
+    terminates the installer itself together with the parent process tree. }
+  UpdateProcessId := StrToIntDef(ExpandConstant('{param:UPDATEPID|0}'), 0);
+  if UpdateProcessId > 0 then
+    TaskkillArguments := '/F /PID ' + IntToStr(UpdateProcessId)
+  else
+    { Manual installs do not provide UPDATEPID. A portable copy can run outside the install
+      directory, so Restart Manager cannot discover it by target-file usage. }
+    TaskkillArguments := '/F /IM ImeTool.exe';
+
   Result := Exec(
     ExpandConstant('{sys}\taskkill.exe'),
-    '/F /T /IM ImeTool.exe',
+    TaskkillArguments,
     '',
     SW_HIDE,
     ewWaitUntilTerminated,
