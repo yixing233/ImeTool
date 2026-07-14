@@ -27,12 +27,11 @@
 
 ## 下载版本
 
-| 版本 | 体积 | 运行要求 |
+| 下载 | 体积 | 运行要求 |
 | --- | ---: | --- |
-| [`ImeTool-win-x64-lite.zip`](https://github.com/yixing233/ImeTool/releases/latest/download/ImeTool-win-x64-lite.zip) | 下载约 8.6 MB，解压约 30 MB | 需要 .NET 9 Desktop Runtime，推荐 |
-| `ImeTool-win-x64.exe` | 约 192 MB | 自包含，无需额外运行库 |
+| [`ImeTool_Windows_x64.zip`](https://github.com/yixing233/ImeTool/releases/latest/download/ImeTool_Windows_x64.zip) | 下载约 8.6 MB，解压约 30 MB | 需要 .NET 9 Desktop Runtime |
 
-轻量 ZIP 解压后只有一个 `ImeTool.exe`。两种构建会分别跟随对应的 GitHub Release 资源在线更新，不会在更新时互相切换。
+ZIP 解压后只有一个 `ImeTool.exe`，在线更新也使用相同的 ZIP 资源。
 
 ## 从源码运行
 
@@ -65,16 +64,8 @@ dotnet test ImeTool.sln -c Release
 
 ## 发布
 
-轻量单文件版：
-
 ```powershell
 dotnet publish src\ImeTool\ImeTool.csproj -c Release -r win-x64 --self-contained false
-```
-
-自包含单文件版：
-
-```powershell
-dotnet publish src\ImeTool\ImeTool.csproj -c Release -r win-x64 --self-contained true -p:UpdateAssetName=ImeTool-win-x64.exe
 ```
 
 发布结果位于：
@@ -89,7 +80,7 @@ src/ImeTool/bin/Release/net9.0-windows10.0.17763.0/win-x64/publish/
 
 1. 更新 `src/ImeTool/ImeTool.csproj` 中的 `Version`。
 2. 提交代码并创建对应的版本标签。
-3. 推送标签，工作流会自动测试、发布轻量版与自包含版，并分别生成 SHA-256 校验文件。
+3. 推送标签，工作流会自动测试并发布 `ImeTool_Windows_x64.zip`。
 
 ```powershell
 git tag v1.0.0
@@ -102,16 +93,13 @@ git push origin v1.0.0
 https://api.github.com/repos/yixing233/ImeTool/releases/latest
 ```
 
-自动更新要求 Release 同时包含：
+Release 只包含：
 
 ```text
-ImeTool-win-x64.exe
-ImeTool-win-x64.exe.sha256
-ImeTool-win-x64-lite.exe
-ImeTool-win-x64-lite.exe.sha256
-ImeTool-win-x64-lite.zip
-ImeTool-win-x64-lite.zip.sha256
+ImeTool_Windows_x64.zip
 ```
+
+客户端使用 GitHub 提供的 Release Asset SHA-256 digest 校验下载内容。
 
 ## 技术栈
 

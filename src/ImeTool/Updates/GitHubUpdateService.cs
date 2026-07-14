@@ -4,7 +4,6 @@ using System.Net;
 using System.Net.Http;
 using System.Reflection;
 using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 
 namespace ImeTool.Updates;
@@ -20,7 +19,7 @@ public sealed record UpdateRelease(
     Version Version,
     string TagName,
     Uri DownloadUri,
-    Uri ChecksumUri,
+    string Sha256,
     Uri ReleasePageUri,
     string ReleaseNotes);
 
@@ -76,9 +75,7 @@ public static class AppVersion
 
 public static class AppPackage
 {
-    public const string SelfContainedAssetName = "ImeTool-win-x64.exe";
-    public const string LightweightAssetName = "ImeTool-win-x64-lite.zip";
-    public const string LegacyLightweightExecutableAssetName = "ImeTool-win-x64-lite.exe";
+    public const string WindowsX64AssetName = "ImeTool_Windows_x64.zip";
 
     public static string UpdateAssetName =>
         Assembly.GetExecutingAssembly()
@@ -87,11 +84,11 @@ public static class AppPackage
                 attribute.Key,
                 "UpdateAssetName",
                 StringComparison.Ordinal))
-            ?.Value ?? SelfContainedAssetName;
+            ?.Value ?? WindowsX64AssetName;
 
     public static bool IsLightweight => string.Equals(
         UpdateAssetName,
-        LightweightAssetName,
+        WindowsX64AssetName,
         StringComparison.OrdinalIgnoreCase);
 }
 
@@ -99,19 +96,14 @@ public sealed class GitHubUpdateService : IDisposable
 {
     public const string LatestReleaseApi = "https://api.github.com/repos/yixing233/ImeTool/releases/latest";
     private const long MaxExecutableBytes = 512L * 1024 * 1024;
-    private const int MaxChecksumBytes = 4096;
 
     private readonly HttpClient _httpClient;
     private readonly bool _ownsHttpClient;
-    private readonly string _executableAssetName;
-    private readonly string _checksumAssetName;
+    private readonly string _assetName;
 
-    public GitHubUpdateService(HttpClient? httpClient = null, string? executableAssetName = null)
+    public GitHubUpdateService(HttpClient? httpClient = null)
     {
-        _executableAssetName = string.IsNullOrWhiteSpace(executableAssetName)
-            ? AppPackage.UpdateAssetName
-            : Path.GetFileName(executableAssetName);
-        _checksumAssetName = _executableAssetName + ".sha256";
+        _assetName = AppPackage.UpdateAssetName;
         _ownsHttpClient = httpClient is null;
         _httpClient = httpClient ?? new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
         if (_httpClient.DefaultRequestHeaders.UserAgent.Count == 0)
@@ -141,7 +133,7 @@ public sealed class GitHubUpdateService : IDisposable
 
         response.EnsureSuccessStatusCode();
         string json = await response.Content.ReadAsStringAsync(cancellationToken);
-        UpdateRelease release = ParseRelease(json, _executableAssetName);
+        UpdateRelease release = ParseRelease(json);
         UpdateAvailability availability = release.Version > current
             ? UpdateAvailability.Available
             : UpdateAvailability.UpToDate;
@@ -153,18 +145,14 @@ public sealed class GitHubUpdateService : IDisposable
         IProgress<double>? progress = null,
         CancellationToken cancellationToken = default)
     {
-        string checksumText = await DownloadSmallTextAsync(
-            release.ChecksumUri,
-            MaxChecksumBytes,
-            cancellationToken);
-        string expectedChecksum = ParseChecksum(checksumText);
+        string expectedChecksum = release.Sha256;
         string updateDirectory = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "ImeTool",
             "Updates",
             release.TagName);
         Directory.CreateDirectory(updateDirectory);
-        string destinationPath = Path.Combine(updateDirectory, _executableAssetName + ".download");
+        string destinationPath = Path.Combine(updateDirectory, _assetName + ".download");
 
         try
         {
@@ -231,12 +219,8 @@ public sealed class GitHubUpdateService : IDisposable
         }
     }
 
-    public static UpdateRelease ParseRelease(string json, string? executableAssetName = null)
+    public static UpdateRelease ParseRelease(string json)
     {
-        string expectedExecutable = string.IsNullOrWhiteSpace(executableAssetName)
-            ? AppPackage.UpdateAssetName
-            : Path.GetFileName(executableAssetName);
-        string expectedChecksum = expectedExecutable + ".sha256";
         using JsonDocument document = JsonDocument.Parse(json);
         JsonElement root = document.RootElement;
         string tagName = root.GetProperty("tag_name").GetString() ?? string.Empty;
@@ -249,37 +233,44 @@ public sealed class GitHubUpdateService : IDisposable
         string notes = root.TryGetProperty("body", out JsonElement body)
             ? body.GetString() ?? string.Empty
             : string.Empty;
-        Uri? executableUri = null;
-        Uri? checksumUri = null;
+        Uri? downloadUri = null;
+        string? sha256 = null;
         foreach (JsonElement asset in root.GetProperty("assets").EnumerateArray())
         {
             string name = asset.GetProperty("name").GetString() ?? string.Empty;
             string url = asset.GetProperty("browser_download_url").GetString() ?? string.Empty;
-            if (string.Equals(name, expectedExecutable, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(name, AppPackage.UpdateAssetName, StringComparison.OrdinalIgnoreCase))
             {
-                executableUri = CreateAbsoluteUri(url);
-            }
-            else if (string.Equals(name, expectedChecksum, StringComparison.OrdinalIgnoreCase))
-            {
-                checksumUri = CreateAbsoluteUri(url);
+                downloadUri = CreateAbsoluteUri(url);
+                string digest = asset.TryGetProperty("digest", out JsonElement digestElement)
+                    ? digestElement.GetString() ?? string.Empty
+                    : string.Empty;
+                sha256 = ParseDigest(digest);
             }
         }
 
         return new UpdateRelease(
             version,
             tagName,
-            executableUri ?? throw new InvalidDataException($"Release 缺少 {expectedExecutable}。"),
-            checksumUri ?? throw new InvalidDataException($"Release 缺少 {expectedChecksum}。"),
+            downloadUri ?? throw new InvalidDataException($"Release 缺少 {AppPackage.UpdateAssetName}。"),
+            sha256 ?? throw new InvalidDataException("Release 资源缺少 SHA-256 digest。"),
             CreateAbsoluteUri(releasePage),
             notes);
     }
 
-    public static string ParseChecksum(string content)
+    public static string ParseDigest(string content)
     {
-        string candidate = (content ?? string.Empty).Trim().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? string.Empty;
+        const string prefix = "sha256:";
+        string value = (content ?? string.Empty).Trim();
+        if (!value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException("GitHub Release 资源缺少 SHA-256 digest。");
+        }
+
+        string candidate = value[prefix.Length..];
         if (candidate.Length != 64 || !candidate.All(Uri.IsHexDigit))
         {
-            throw new InvalidDataException("Release 中的 SHA-256 校验文件无效。");
+            throw new InvalidDataException("GitHub Release 资源的 SHA-256 digest 无效。");
         }
 
         return candidate.ToUpperInvariant();
@@ -362,43 +353,6 @@ public sealed class GitHubUpdateService : IDisposable
         Uri.TryCreate(value, UriKind.Absolute, out Uri? uri)
             ? uri
             : throw new InvalidDataException("GitHub Release 包含无效下载地址。");
-
-    private async Task<string> DownloadSmallTextAsync(
-        Uri uri,
-        int maximumBytes,
-        CancellationToken cancellationToken)
-    {
-        using HttpResponseMessage response = await _httpClient.GetAsync(
-            uri,
-            HttpCompletionOption.ResponseHeadersRead,
-            cancellationToken);
-        response.EnsureSuccessStatusCode();
-        if (response.Content.Headers.ContentLength > maximumBytes)
-        {
-            throw new InvalidDataException("更新校验文件超过允许的大小限制。");
-        }
-
-        await using Stream stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        using var memory = new MemoryStream();
-        byte[] buffer = new byte[1024];
-        while (true)
-        {
-            int read = await stream.ReadAsync(buffer, cancellationToken);
-            if (read == 0)
-            {
-                break;
-            }
-
-            if (memory.Length + read > maximumBytes)
-            {
-                throw new InvalidDataException("更新校验文件超过允许的大小限制。");
-            }
-
-            memory.Write(buffer, 0, read);
-        }
-
-        return Encoding.UTF8.GetString(memory.ToArray());
-    }
 
     public void Dispose()
     {

@@ -14,28 +14,9 @@ public sealed class GitHubUpdateServiceTests
           "body": "Release notes",
           "assets": [
             {
-              "name": "ImeTool-win-x64.exe",
-              "browser_download_url": "https://example.test/ImeTool-win-x64.exe"
-            },
-            {
-              "name": "ImeTool-win-x64.exe.sha256",
-              "browser_download_url": "https://example.test/ImeTool-win-x64.exe.sha256"
-            },
-            {
-              "name": "ImeTool-win-x64-lite.exe",
-              "browser_download_url": "https://example.test/ImeTool-win-x64-lite.exe"
-            },
-            {
-              "name": "ImeTool-win-x64-lite.exe.sha256",
-              "browser_download_url": "https://example.test/ImeTool-win-x64-lite.exe.sha256"
-            },
-            {
-              "name": "ImeTool-win-x64-lite.zip",
-              "browser_download_url": "https://example.test/ImeTool-win-x64-lite.zip"
-            },
-            {
-              "name": "ImeTool-win-x64-lite.zip.sha256",
-              "browser_download_url": "https://example.test/ImeTool-win-x64-lite.zip.sha256"
+              "name": "ImeTool_Windows_x64.zip",
+              "browser_download_url": "https://example.test/ImeTool_Windows_x64.zip",
+              "digest": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
             }
           ]
         }
@@ -44,7 +25,7 @@ public sealed class GitHubUpdateServiceTests
     [Fact]
     public void DefaultBuildTargetsLightweightUpdateAsset()
     {
-        Assert.Equal(AppPackage.LightweightAssetName, AppPackage.UpdateAssetName);
+        Assert.Equal(AppPackage.WindowsX64AssetName, AppPackage.UpdateAssetName);
         Assert.True(AppPackage.IsLightweight);
     }
 
@@ -59,14 +40,14 @@ public sealed class GitHubUpdateServiceTests
     }
 
     [Fact]
-    public void ParseRelease_SelectsLightweightAssetsForLightweightBuild()
+    public void ParseRelease_SelectsWindowsPackageAndGitHubDigest()
     {
-        UpdateRelease release = GitHubUpdateService.ParseRelease(
-            ReleaseJson,
-            AppPackage.LightweightAssetName);
+        UpdateRelease release = GitHubUpdateService.ParseRelease(ReleaseJson);
 
-        Assert.EndsWith("ImeTool-win-x64-lite.zip", release.DownloadUri.AbsoluteUri);
-        Assert.EndsWith("ImeTool-win-x64-lite.zip.sha256", release.ChecksumUri.AbsoluteUri);
+        Assert.EndsWith("ImeTool_Windows_x64.zip", release.DownloadUri.AbsoluteUri);
+        Assert.Equal(
+            "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF",
+            release.Sha256);
     }
 
     [Fact]
@@ -74,7 +55,7 @@ public sealed class GitHubUpdateServiceTests
     {
         string directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
-        string archivePath = Path.Combine(directory, AppPackage.LightweightAssetName);
+        string archivePath = Path.Combine(directory, AppPackage.WindowsX64AssetName);
         using (ZipArchive archive = ZipFile.Open(archivePath, ZipArchiveMode.Create))
         {
             ZipArchiveEntry executable = archive.CreateEntry("ImeTool.exe");
@@ -109,23 +90,10 @@ public sealed class GitHubUpdateServiceTests
     }
 
     [Fact]
-    public void ParseRelease_SelectsExecutableAndChecksumAssets()
-    {
-        UpdateRelease release = GitHubUpdateService.ParseRelease(
-            ReleaseJson,
-            AppPackage.SelfContainedAssetName);
-
-        Assert.Equal(new Version(1, 2, 3), release.Version);
-        Assert.Equal("v1.2.3", release.TagName);
-        Assert.Equal("https://example.test/ImeTool-win-x64.exe", release.DownloadUri.AbsoluteUri);
-        Assert.Equal("https://example.test/ImeTool-win-x64.exe.sha256", release.ChecksumUri.AbsoluteUri);
-    }
-
-    [Fact]
     public async Task CheckForUpdatesAsync_ReturnsAvailableForNewerRelease()
     {
         using var client = new HttpClient(new StubHandler(HttpStatusCode.OK, ReleaseJson));
-        using var service = new GitHubUpdateService(client, AppPackage.SelfContainedAssetName);
+        using var service = new GitHubUpdateService(client);
 
         UpdateCheckResult result = await service.CheckForUpdatesAsync(new Version(1, 0, 0));
 
@@ -137,7 +105,7 @@ public sealed class GitHubUpdateServiceTests
     public async Task CheckForUpdatesAsync_HandlesRepositoryWithoutRelease()
     {
         using var client = new HttpClient(new StubHandler(HttpStatusCode.NotFound, "{}"));
-        using var service = new GitHubUpdateService(client, AppPackage.SelfContainedAssetName);
+        using var service = new GitHubUpdateService(client);
 
         UpdateCheckResult result = await service.CheckForUpdatesAsync(new Version(1, 0, 0));
 
@@ -146,10 +114,10 @@ public sealed class GitHubUpdateServiceTests
     }
 
     [Fact]
-    public void ParseChecksum_AcceptsStandardSha256File()
+    public void ParseDigest_AcceptsGitHubSha256Digest()
     {
-        string hash = GitHubUpdateService.ParseChecksum(
-            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef *ImeTool-win-x64.exe");
+        string hash = GitHubUpdateService.ParseDigest(
+            "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
 
         Assert.Equal("0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF", hash);
     }

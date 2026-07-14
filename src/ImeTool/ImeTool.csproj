@@ -12,12 +12,12 @@
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
     <AssemblyName>ImeTool</AssemblyName>
     <RootNamespace>ImeTool</RootNamespace>
-    <Version>1.0.2</Version>
+    <Version>1.0.3</Version>
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>false</SelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-    <UpdateAssetName Condition="'$(UpdateAssetName)' == ''">ImeTool-win-x64-lite.zip</UpdateAssetName>
+    <UpdateAssetName Condition="'$(UpdateAssetName)' == ''">ImeTool_Windows_x64.zip</UpdateAssetName>
   </PropertyGroup>
 
   <ItemGroup>
