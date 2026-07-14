@@ -297,6 +297,43 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="44" />
                                 <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <ui:SymbolIcon Symbol="ArrowSync24" Style="{StaticResource RowIconStyle}" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="8,0,16,0">
+                                <TextBlock Text="自动检查更新" Style="{StaticResource RowTitleStyle}" />
+                                <TextBlock Text="启动后通过 GitHub Releases 检查新版本" Style="{StaticResource RowDescriptionStyle}" />
+                            </StackPanel>
+                            <ui:ToggleSwitch x:Name="AutoCheckUpdatesBox" Grid.Column="2" VerticalAlignment="Center" />
+                        </Grid>
+
+                        <Border Height="1" Background="{DynamicResource SettingsDividerBrush}" Margin="60,0,0,0" />
+
+                        <Grid MinHeight="64" Margin="16,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="44" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="150" />
+                            </Grid.ColumnDefinitions>
+                            <ui:SymbolIcon Symbol="ArrowDownload24" Style="{StaticResource RowIconStyle}" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="8,0,16,0">
+                                <TextBlock Text="软件更新" Style="{StaticResource RowTitleStyle}" />
+                                <TextBlock x:Name="UpdateStatusText" Text="检查 GitHub Releases 上的最新版本"
+                                           Style="{StaticResource RowDescriptionStyle}" />
+                            </StackPanel>
+                            <Button x:Name="UpdateActionButton"
+                                    Grid.Column="2"
+                                    Content="检查更新"
+                                    VerticalAlignment="Center"
+                                    Click="OnUpdateActionClicked" />
+                        </Grid>
+
+                        <Border Height="1" Background="{DynamicResource SettingsDividerBrush}" Margin="60,0,0,0" />
+
+                        <Grid MinHeight="64" Margin="16,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="44" />
+                                <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="210" />
                             </Grid.ColumnDefinitions>
                             <ui:SymbolIcon Symbol="WindowBrush24" Style="{StaticResource RowIconStyle}" />

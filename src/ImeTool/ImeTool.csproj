@@ -12,6 +12,7 @@
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
     <AssemblyName>ImeTool</AssemblyName>
     <RootNamespace>ImeTool</RootNamespace>
+    <Version>1.0.0</Version>
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>true</SelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>

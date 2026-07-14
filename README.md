@@ -15,6 +15,7 @@
 - 支持应用排除规则，并可检测当前已打开的窗口
 - 支持自定义全局快捷键
 - 提供系统托盘菜单、开机启动和静默启动
+- 通过 GitHub Releases 自动检查、下载并安装新版本
 - 设置窗口支持 Acrylic 和 Mica 系统材质
 
 ## 系统要求
@@ -64,6 +65,32 @@ dotnet publish src\ImeTool\ImeTool.csproj -c Release -r win-x64 --self-contained
 src/ImeTool/bin/Release/net9.0-windows10.0.17763.0/win-x64/publish/
 ```
 
+### 创建 GitHub Release
+
+项目通过 GitHub Actions 自动构建 Release。发布新版本时：
+
+1. 更新 `src/ImeTool/ImeTool.csproj` 中的 `Version`。
+2. 提交代码并创建对应的版本标签。
+3. 推送标签，工作流会自动测试、发布单文件 EXE，并生成 SHA-256 校验文件。
+
+```powershell
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+应用通过以下接口检查最新版：
+
+```text
+https://api.github.com/repos/yixing233/ImeTool/releases/latest
+```
+
+自动更新要求 Release 同时包含：
+
+```text
+ImeTool-win-x64.exe
+ImeTool-win-x64.exe.sha256
+```
+
 ## 技术栈
 
 - .NET 9
@@ -80,4 +107,3 @@ ImeTool
 ├─ tests/ImeTool.Tests  自动化测试
 └─ ImeTool.sln          Visual Studio 解决方案
 ```
-

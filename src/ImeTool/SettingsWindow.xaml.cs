@@ -1,11 +1,13 @@
 using System.Globalization;
 using System.IO;
+using System.Net.Http;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using ImeTool.Overlay;
 using ImeTool.Hotkeys;
 using ImeTool.Settings;
+using ImeTool.Updates;
 using Border = System.Windows.Controls.Border;
 using ComboBoxItem = System.Windows.Controls.ComboBoxItem;
 using Grid = System.Windows.Controls.Grid;
@@ -41,7 +43,9 @@ public partial class SettingsWindow : FluentWindow
     private MarkerState _previewState = MarkerState.Chinese;
     private readonly Dictionary<MarkerState, StateAppearanceDraft> _stateDrafts = new();
     private readonly WindowDiscoveryService _windowDiscoveryService = new();
+    private readonly GitHubUpdateService _updateService = new();
     private MarkerState _stateEditorState = MarkerState.Chinese;
+    private UpdateRelease? _availableUpdate;
     private bool _updatingStateEditor;
 
     public SettingsWindow(AppSettings settings)
@@ -60,6 +64,12 @@ public partial class SettingsWindow : FluentWindow
     }
 
     public AppSettings Settings { get; private set; }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        _updateService.Dispose();
+        base.OnClosed(e);
+    }
 
     protected override void OnPreviewKeyDown(KeyEventArgs e)
     {
@@ -125,6 +135,10 @@ public partial class SettingsWindow : FluentWindow
         EnabledBox.IsChecked = normalized.Enabled;
         StartupBox.IsChecked = normalized.StartWithWindows;
         SilentStartBox.IsChecked = normalized.SilentStart;
+        AutoCheckUpdatesBox.IsChecked = normalized.AutoCheckForUpdates;
+        UpdateStatusText.Text = $"当前版本 v{AppVersion.Display}";
+        UpdateActionButton.Content = "检查更新";
+        _availableUpdate = null;
         SelectBackdrop(normalized.SettingsBackdrop);
         ApplyBackdrop(normalized.SettingsBackdrop);
         SelectStyle(normalized.Marker.Style);
@@ -375,6 +389,7 @@ public partial class SettingsWindow : FluentWindow
             Enabled = EnabledBox.IsChecked == true,
             StartWithWindows = StartupBox.IsChecked == true,
             SilentStart = SilentStartBox.IsChecked == true,
+            AutoCheckForUpdates = AutoCheckUpdatesBox.IsChecked == true,
             SettingsBackdrop = SelectedBackdrop(),
             Marker = ReadMarkerSettings(),
             MarkerBehavior = ReadMarkerBehaviorSettings(),
@@ -391,6 +406,88 @@ public partial class SettingsWindow : FluentWindow
     private void OnCancelClicked(object sender, RoutedEventArgs e) => DialogResult = false;
 
     private void OnResetClicked(object sender, RoutedEventArgs e) => LoadFromSettings(new AppSettings());
+
+    private async void OnUpdateActionClicked(object sender, RoutedEventArgs e)
+    {
+        if (_availableUpdate is not null)
+        {
+            await DownloadAndInstallUpdateAsync(_availableUpdate);
+            return;
+        }
+
+        UpdateActionButton.IsEnabled = false;
+        UpdateActionButton.Content = "检查中…";
+        UpdateStatusText.Text = "正在连接 GitHub Releases…";
+        try
+        {
+            UpdateCheckResult result = await _updateService.CheckForUpdatesAsync();
+            if (result.Availability == UpdateAvailability.Available && result.Release is not null)
+            {
+                _availableUpdate = result.Release;
+                UpdateStatusText.Text = $"发现新版本 v{AppVersion.Format(result.Release.Version)}";
+                UpdateActionButton.Content = "下载并安装";
+            }
+            else if (result.Availability == UpdateAvailability.NoPublishedRelease)
+            {
+                UpdateStatusText.Text = $"当前版本 v{AppVersion.Display}，仓库暂未发布 Release";
+                UpdateActionButton.Content = "重新检查";
+            }
+            else
+            {
+                UpdateStatusText.Text = $"当前已是最新版本 v{AppVersion.Display}";
+                UpdateActionButton.Content = "重新检查";
+            }
+        }
+        catch (Exception exception)
+        {
+            UpdateStatusText.Text = $"检查失败：{GetUpdateErrorMessage(exception)}";
+            UpdateActionButton.Content = "重试";
+        }
+        finally
+        {
+            UpdateActionButton.IsEnabled = true;
+        }
+    }
+
+    private async Task DownloadAndInstallUpdateAsync(UpdateRelease release)
+    {
+        if (!SelfUpdateLauncher.CanInstall)
+        {
+            UpdateStatusText.Text = "当前运行方式不支持自动替换程序文件";
+            return;
+        }
+
+        UpdateActionButton.IsEnabled = false;
+        UpdateActionButton.Content = "下载中…";
+        var progress = new Progress<double>(value =>
+        {
+            int percentage = (int)Math.Round(value * 100);
+            UpdateStatusText.Text = $"正在下载 v{AppVersion.Format(release.Version)}：{percentage}%";
+        });
+
+        try
+        {
+            string downloadedExecutable = await _updateService.DownloadUpdateAsync(release, progress);
+            UpdateStatusText.Text = "校验完成，正在启动更新程序…";
+            SelfUpdateLauncher.Launch(downloadedExecutable);
+            System.Windows.Application.Current.Shutdown();
+        }
+        catch (Exception exception)
+        {
+            UpdateStatusText.Text = $"更新失败：{GetUpdateErrorMessage(exception)}";
+            UpdateActionButton.Content = "重试安装";
+            UpdateActionButton.IsEnabled = true;
+        }
+    }
+
+    private static string GetUpdateErrorMessage(Exception exception) => exception switch
+    {
+        HttpRequestException => "无法连接 GitHub",
+        TaskCanceledException => "连接超时",
+        InvalidDataException => exception.Message,
+        UnauthorizedAccessException => "没有替换程序文件的权限",
+        _ => exception.Message
+    };
 
     private void OnRefreshWindowsClicked(object sender, RoutedEventArgs e) => RefreshDetectedWindows();
 

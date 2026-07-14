@@ -1,6 +1,7 @@
 using System.Drawing;
 using System.IO;
 using System.Windows;
+using ImeTool.Updates;
 using Forms = System.Windows.Forms;
 
 namespace ImeTool.Tray;
@@ -27,6 +28,8 @@ public sealed class TrayIcon : IDisposable
             Visible = true
         };
         _notifyIcon.MouseUp += OnNotifyIconMouseUp;
+        _notifyIcon.BalloonTipClicked += (_, _) =>
+            System.Windows.Application.Current.Dispatcher.BeginInvoke(() => SettingsRequested?.Invoke(this, EventArgs.Empty));
         _notifyIcon.DoubleClick += (_, _) =>
             System.Windows.Application.Current.Dispatcher.BeginInvoke(() => SettingsRequested?.Invoke(this, EventArgs.Empty));
     }
@@ -46,6 +49,14 @@ public sealed class TrayIcon : IDisposable
     {
         _startupEnabled = enabled;
         _menuWindow?.SetState(_enabled, _startupEnabled);
+    }
+
+    public void ShowUpdateAvailable(Version version)
+    {
+        _notifyIcon.BalloonTipTitle = "ImeTool 有新版本";
+        _notifyIcon.BalloonTipText = $"发现 v{AppVersion.Format(version)}，点击打开设置进行更新。";
+        _notifyIcon.BalloonTipIcon = Forms.ToolTipIcon.Info;
+        _notifyIcon.ShowBalloonTip(8000);
     }
 
     private void OnNotifyIconMouseUp(object? sender, Forms.MouseEventArgs e)

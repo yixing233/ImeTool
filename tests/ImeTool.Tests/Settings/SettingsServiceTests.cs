@@ -15,6 +15,7 @@ public sealed class SettingsServiceTests
         Assert.True(settings.Enabled);
         Assert.False(settings.StartWithWindows);
         Assert.True(settings.SilentStart);
+        Assert.True(settings.AutoCheckForUpdates);
         Assert.Equal(SettingsWindowBackdrop.Acrylic, settings.SettingsBackdrop);
         Assert.Equal(MarkerDisplayMode.Always, settings.MarkerBehavior.DisplayMode);
         Assert.True(settings.GlobalHotkeysEnabled);
@@ -26,7 +27,13 @@ public sealed class SettingsServiceTests
         string directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
         string path = Path.Combine(directory, "settings.json");
         var service = new SettingsService(path);
-        var expected = new AppSettings { Enabled = false, StartWithWindows = true, SilentStart = false };
+        var expected = new AppSettings
+        {
+            Enabled = false,
+            StartWithWindows = true,
+            SilentStart = false,
+            AutoCheckForUpdates = false
+        };
 
         service.Save(expected);
         AppSettings actual = service.Load();
@@ -34,6 +41,7 @@ public sealed class SettingsServiceTests
         Assert.False(actual.Enabled);
         Assert.True(actual.StartWithWindows);
         Assert.False(actual.SilentStart);
+        Assert.False(actual.AutoCheckForUpdates);
     }
 
     [Fact]
@@ -106,7 +114,7 @@ public sealed class SettingsServiceTests
         Assert.Equal(2, actual.ApplicationRules.Count);
         Assert.Contains(actual.ApplicationRules, rule => rule.ProcessName == "Chrome" && rule.Excluded);
         Assert.Contains(actual.ApplicationRules, rule => rule.ProcessName == "Code" && rule.DisableStateRestore);
-        Assert.Equal(9, actual.SettingsVersion);
+        Assert.Equal(10, actual.SettingsVersion);
     }
 
     [Fact]

@@ -9,6 +9,7 @@ using ImeTool.Settings;
 using ImeTool.State;
 using ImeTool.Tracking;
 using ImeTool.Tray;
+using ImeTool.Updates;
 
 namespace ImeTool;
 
@@ -29,6 +30,8 @@ public sealed class AppController : IDisposable
     private readonly WinEventHook _eventHook;
     private readonly TrayIcon _trayIcon;
     private readonly GlobalHotkeyService _globalHotkeys;
+    private readonly GitHubUpdateService _updateService;
+    private readonly CancellationTokenSource _updateCancellation = new();
     private readonly ProcessNameResolver _processNameResolver;
     private readonly DispatcherTimer _timer;
     private AppSettings _settings;
@@ -72,6 +75,7 @@ public sealed class AppController : IDisposable
         _eventHook = new WinEventHook();
         _trayIcon = new TrayIcon(_settings);
         _globalHotkeys = new GlobalHotkeyService();
+        _updateService = new GitHubUpdateService();
         _trayIcon.SetEnabledChecked(_settings.Enabled);
         _trayIcon.SetStartupChecked(_settings.StartWithWindows);
 
@@ -94,6 +98,35 @@ public sealed class AppController : IDisposable
     public void Start()
     {
         _timer.Start();
+        if (_settings.AutoCheckForUpdates)
+        {
+            _ = CheckForUpdatesAfterStartupAsync(_updateCancellation.Token);
+        }
+    }
+
+    private async Task CheckForUpdatesAfterStartupAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(4), cancellationToken);
+            UpdateCheckResult result = await _updateService.CheckForUpdatesAsync(cancellationToken: cancellationToken);
+            if (result.Availability == UpdateAvailability.Available && result.Release is not null)
+            {
+                DiagnosticsLog.Write($"Update available: {result.Release.TagName}.");
+                _trayIcon.ShowUpdateAvailable(result.Release.Version);
+            }
+            else
+            {
+                DiagnosticsLog.Write($"Update check completed: {result.Availability}.");
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception)
+        {
+            DiagnosticsLog.Write($"Automatic update check failed: {exception.Message}");
+        }
     }
 
     public bool SilentStart => _settings.SilentStart;
@@ -393,10 +426,13 @@ public sealed class AppController : IDisposable
 
         _disposed = true;
         DiagnosticsLog.Write("ImeTool exiting.");
+        _updateCancellation.Cancel();
         _timer.Stop();
         _eventHook.Dispose();
         _capsLockService.InputModeToggleRequested -= OnInputModeToggleRequested;
         _globalHotkeys.Dispose();
+        _updateService.Dispose();
+        _updateCancellation.Dispose();
         _trayIcon.Dispose();
         _overlay.HideMarker(immediate: true);
         _overlay.Close();
