@@ -27,13 +27,21 @@ public sealed class GitHubUpdateServiceTests
     [Theory]
     [InlineData("v1.2.3", 1, 2, 3)]
     [InlineData("1.2.3", 1, 2, 3)]
-    [InlineData("v2.0.0-beta.1", 2, 0, 0)]
     public void TryParseVersionTag_HandlesGitHubTags(string tag, int major, int minor, int build)
     {
         bool parsed = AppVersion.TryParseTag(tag, out Version version);
 
         Assert.True(parsed);
         Assert.Equal(new Version(major, minor, build), version);
+    }
+
+    [Theory]
+    [InlineData("v2.0.0-beta.1")]
+    [InlineData("v1.2.3.4")]
+    [InlineData("vNext")]
+    public void TryParseVersionTag_RejectsUnsupportedTags(string tag)
+    {
+        Assert.False(AppVersion.TryParseTag(tag, out _));
     }
 
     [Fact]

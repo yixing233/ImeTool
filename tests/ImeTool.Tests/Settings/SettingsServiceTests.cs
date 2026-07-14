@@ -194,6 +194,26 @@ public sealed class SettingsServiceTests
     }
 
     [Fact]
+    public void Version_Nine_Settings_Enable_Automatic_Update_Checks_By_Default()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "settings.json");
+        File.WriteAllText(path, """
+            {
+              "SettingsVersion": 9,
+              "Enabled": true
+            }
+            """);
+        var service = new SettingsService(path);
+
+        AppSettings actual = service.Load();
+
+        Assert.True(actual.AutoCheckForUpdates);
+        Assert.Equal(10, actual.SettingsVersion);
+    }
+
+    [Fact]
     public void Invalid_Hotkey_Gesture_Is_Normalized_To_Removed()
     {
         GlobalHotkeySettings settings = new GlobalHotkeySettings

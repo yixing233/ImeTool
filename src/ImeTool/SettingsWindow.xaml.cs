@@ -44,8 +44,10 @@ public partial class SettingsWindow : FluentWindow
     private readonly Dictionary<MarkerState, StateAppearanceDraft> _stateDrafts = new();
     private readonly WindowDiscoveryService _windowDiscoveryService = new();
     private readonly GitHubUpdateService _updateService = new();
+    private readonly CancellationTokenSource _updateCancellation = new();
     private MarkerState _stateEditorState = MarkerState.Chinese;
     private UpdateRelease? _availableUpdate;
+    private bool _windowClosed;
     private bool _updatingStateEditor;
 
     public SettingsWindow(AppSettings settings)
@@ -67,7 +69,10 @@ public partial class SettingsWindow : FluentWindow
 
     protected override void OnClosed(EventArgs e)
     {
+        _windowClosed = true;
+        _updateCancellation.Cancel();
         _updateService.Dispose();
+        _updateCancellation.Dispose();
         base.OnClosed(e);
     }
 
@@ -376,15 +381,29 @@ public partial class SettingsWindow : FluentWindow
 
     private void OnSaveClicked(object sender, RoutedEventArgs e)
     {
-        GlobalHotkeySettings hotkeys = ReadHotkeySettings().Normalize();
-        if (!TryValidateHotkeys(hotkeys, out string? validationError))
+        if (!TryBuildSettings(out AppSettings settings, out string? validationError))
         {
             SaveHintText.Foreground = new SolidColorBrush(MediaColor.FromRgb(0xC4, 0x2B, 0x1C));
             SaveHintText.Text = validationError;
             return;
         }
 
-        Settings = new AppSettings
+        Settings = settings;
+        SaveHintText.Foreground = new SolidColorBrush(MediaColor.FromRgb(0x0F, 0x7B, 0x0F));
+        SaveHintText.Text = "设置已保存";
+        DialogResult = true;
+    }
+
+    private bool TryBuildSettings(out AppSettings settings, out string? validationError)
+    {
+        GlobalHotkeySettings hotkeys = ReadHotkeySettings().Normalize();
+        if (!TryValidateHotkeys(hotkeys, out validationError))
+        {
+            settings = Settings;
+            return false;
+        }
+
+        settings = new AppSettings
         {
             Enabled = EnabledBox.IsChecked == true,
             StartWithWindows = StartupBox.IsChecked == true,
@@ -397,10 +416,7 @@ public partial class SettingsWindow : FluentWindow
             Hotkeys = hotkeys,
             ApplicationRules = ReadApplicationRules()
         }.Normalize();
-
-        SaveHintText.Foreground = new SolidColorBrush(MediaColor.FromRgb(0x0F, 0x7B, 0x0F));
-        SaveHintText.Text = "设置已保存";
-        DialogResult = true;
+        return true;
     }
 
     private void OnCancelClicked(object sender, RoutedEventArgs e) => DialogResult = false;
@@ -420,7 +436,13 @@ public partial class SettingsWindow : FluentWindow
         UpdateStatusText.Text = "正在连接 GitHub Releases…";
         try
         {
-            UpdateCheckResult result = await _updateService.CheckForUpdatesAsync();
+            CancellationToken cancellationToken = _updateCancellation.Token;
+            UpdateCheckResult result = await _updateService.CheckForUpdatesAsync(cancellationToken: cancellationToken);
+            if (_windowClosed)
+            {
+                return;
+            }
+
             if (result.Availability == UpdateAvailability.Available && result.Release is not null)
             {
                 _availableUpdate = result.Release;
@@ -438,6 +460,10 @@ public partial class SettingsWindow : FluentWindow
                 UpdateActionButton.Content = "重新检查";
             }
         }
+        catch (OperationCanceledException) when (_windowClosed)
+        {
+            return;
+        }
         catch (Exception exception)
         {
             UpdateStatusText.Text = $"检查失败：{GetUpdateErrorMessage(exception)}";
@@ -445,7 +471,10 @@ public partial class SettingsWindow : FluentWindow
         }
         finally
         {
-            UpdateActionButton.IsEnabled = true;
+            if (!_windowClosed)
+            {
+                UpdateActionButton.IsEnabled = true;
+            }
         }
     }
 
@@ -461,16 +490,45 @@ public partial class SettingsWindow : FluentWindow
         UpdateActionButton.Content = "下载中…";
         var progress = new Progress<double>(value =>
         {
+            if (_windowClosed)
+            {
+                return;
+            }
+
             int percentage = (int)Math.Round(value * 100);
             UpdateStatusText.Text = $"正在下载 v{AppVersion.Format(release.Version)}：{percentage}%";
         });
 
         try
         {
-            string downloadedExecutable = await _updateService.DownloadUpdateAsync(release, progress);
+            CancellationToken cancellationToken = _updateCancellation.Token;
+            string downloadedExecutable = await _updateService.DownloadUpdateAsync(
+                release,
+                progress,
+                cancellationToken);
+            if (_windowClosed || cancellationToken.IsCancellationRequested)
+            {
+                return;
+            }
+
             UpdateStatusText.Text = "校验完成，正在启动更新程序…";
+            if (!TryBuildSettings(out AppSettings pendingSettings, out string? validationError))
+            {
+                UpdateStatusText.Text = $"无法安装：{validationError}";
+                UpdateActionButton.Content = "重试安装";
+                UpdateActionButton.IsEnabled = true;
+                return;
+            }
+
+            new StartupManager().SetEnabled(pendingSettings.StartWithWindows);
+            new SettingsService().Save(pendingSettings);
+            Settings = pendingSettings;
             SelfUpdateLauncher.Launch(downloadedExecutable);
             System.Windows.Application.Current.Shutdown();
+        }
+        catch (OperationCanceledException) when (_windowClosed)
+        {
+            return;
         }
         catch (Exception exception)
         {

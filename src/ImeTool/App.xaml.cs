@@ -1,3 +1,4 @@
+using System.IO;
 using System.Threading;
 using System.Windows;
 
@@ -23,6 +24,7 @@ public partial class App : System.Windows.Application
 
         _controller = new AppController();
         _controller.Start();
+        ReportSuccessfulUpdateStartup(e.Args);
 
         bool trayPreviewRequested = e.Args.Any(arg => string.Equals(arg, "--tray-menu", StringComparison.OrdinalIgnoreCase));
 
@@ -44,6 +46,25 @@ public partial class App : System.Windows.Application
         _singleInstanceMutex?.ReleaseMutex();
         _singleInstanceMutex?.Dispose();
         base.OnExit(e);
+    }
+
+    private static void ReportSuccessfulUpdateStartup(IReadOnlyList<string> arguments)
+    {
+        string? healthPath = StartupLaunchPolicy.GetArgumentValue(arguments, "--update-health-check");
+        if (string.IsNullOrWhiteSpace(healthPath))
+        {
+            return;
+        }
+
+        try
+        {
+            File.WriteAllText(healthPath, "ok");
+            Diagnostics.DiagnosticsLog.Write("Update startup health check completed.");
+        }
+        catch (Exception exception)
+        {
+            Diagnostics.DiagnosticsLog.Write($"Unable to report update startup health: {exception.Message}");
+        }
     }
 }
 

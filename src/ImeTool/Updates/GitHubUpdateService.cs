@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Http;
 using System.Reflection;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 
 namespace ImeTool.Updates;
@@ -43,18 +44,17 @@ public static class AppVersion
         }
 
         string value = tag.Trim().TrimStart('v', 'V');
-        int suffixIndex = value.IndexOfAny(['-', '+']);
-        if (suffixIndex >= 0)
-        {
-            value = value[..suffixIndex];
-        }
-
-        if (!Version.TryParse(value, out Version? parsed))
+        string[] parts = value.Split('.');
+        if (parts.Length != 3 ||
+            !int.TryParse(parts[0], out int major) ||
+            !int.TryParse(parts[1], out int minor) ||
+            !int.TryParse(parts[2], out int build) ||
+            major < 0 || minor < 0 || build < 0)
         {
             return false;
         }
 
-        version = Normalize(parsed);
+        version = new Version(major, minor, build);
         return true;
     }
 
@@ -72,6 +72,8 @@ public sealed class GitHubUpdateService : IDisposable
     public const string LatestReleaseApi = "https://api.github.com/repos/yixing233/ImeTool/releases/latest";
     public const string ExecutableAssetName = "ImeTool-win-x64.exe";
     public const string ChecksumAssetName = "ImeTool-win-x64.exe.sha256";
+    private const long MaxExecutableBytes = 512L * 1024 * 1024;
+    private const int MaxChecksumBytes = 4096;
 
     private readonly HttpClient _httpClient;
     private readonly bool _ownsHttpClient;
@@ -119,7 +121,10 @@ public sealed class GitHubUpdateService : IDisposable
         IProgress<double>? progress = null,
         CancellationToken cancellationToken = default)
     {
-        string checksumText = await _httpClient.GetStringAsync(release.ChecksumUri, cancellationToken);
+        string checksumText = await DownloadSmallTextAsync(
+            release.ChecksumUri,
+            MaxChecksumBytes,
+            cancellationToken);
         string expectedChecksum = ParseChecksum(checksumText);
         string updateDirectory = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -138,6 +143,11 @@ public sealed class GitHubUpdateService : IDisposable
             response.EnsureSuccessStatusCode();
 
             long? contentLength = response.Content.Headers.ContentLength;
+            if (contentLength > MaxExecutableBytes)
+            {
+                throw new InvalidDataException("更新文件超过允许的大小限制。");
+            }
+
             await using Stream source = await response.Content.ReadAsStreamAsync(cancellationToken);
             await using var destination = new FileStream(
                 destinationPath,
@@ -155,6 +165,11 @@ public sealed class GitHubUpdateService : IDisposable
                 if (read == 0)
                 {
                     break;
+                }
+
+                if (totalRead + read > MaxExecutableBytes)
+                {
+                    throw new InvalidDataException("更新文件超过允许的大小限制。");
                 }
 
                 await destination.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
@@ -237,6 +252,43 @@ public sealed class GitHubUpdateService : IDisposable
         Uri.TryCreate(value, UriKind.Absolute, out Uri? uri)
             ? uri
             : throw new InvalidDataException("GitHub Release 包含无效下载地址。");
+
+    private async Task<string> DownloadSmallTextAsync(
+        Uri uri,
+        int maximumBytes,
+        CancellationToken cancellationToken)
+    {
+        using HttpResponseMessage response = await _httpClient.GetAsync(
+            uri,
+            HttpCompletionOption.ResponseHeadersRead,
+            cancellationToken);
+        response.EnsureSuccessStatusCode();
+        if (response.Content.Headers.ContentLength > maximumBytes)
+        {
+            throw new InvalidDataException("更新校验文件超过允许的大小限制。");
+        }
+
+        await using Stream stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var memory = new MemoryStream();
+        byte[] buffer = new byte[1024];
+        while (true)
+        {
+            int read = await stream.ReadAsync(buffer, cancellationToken);
+            if (read == 0)
+            {
+                break;
+            }
+
+            if (memory.Length + read > maximumBytes)
+            {
+                throw new InvalidDataException("更新校验文件超过允许的大小限制。");
+            }
+
+            memory.Write(buffer, 0, read);
+        }
+
+        return Encoding.UTF8.GetString(memory.ToArray());
+    }
 
     public void Dispose()
     {

@@ -25,4 +25,14 @@ public sealed class StartupLaunchPolicyTests
     {
         Assert.False(StartupLaunchPolicy.ShouldShowSettings(["--tray-menu"], silentStart: false));
     }
+
+    [Fact]
+    public void Reads_Update_Health_Check_Path()
+    {
+        string? path = StartupLaunchPolicy.GetArgumentValue(
+            ["--update-health-check", @"C:\Temp\health.ok"],
+            "--update-health-check");
+
+        Assert.Equal(@"C:\Temp\health.ok", path);
+    }
 }
