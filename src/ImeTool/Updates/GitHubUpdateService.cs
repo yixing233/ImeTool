@@ -5,6 +5,7 @@ using System.Net.Http;
 using System.Reflection;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace ImeTool.Updates;
 
@@ -90,16 +91,31 @@ public static class AppPackage
 
 public sealed class GitHubUpdateService : IDisposable
 {
+    public const string LatestReleasePage = "https://github.com/yixing233/ImeTool/releases/latest";
     public const string LatestReleaseApi = "https://api.github.com/repos/yixing233/ImeTool/releases/latest";
+    private const string ReleasesBaseUrl = "https://github.com/yixing233/ImeTool/releases";
+    private const int MaxMetadataBytes = 2 * 1024 * 1024;
     private const long MaxExecutableBytes = 512L * 1024 * 1024;
+    private static readonly TimeSpan DefaultMetadataReadTimeout = TimeSpan.FromSeconds(30);
 
     private readonly HttpClient _httpClient;
     private readonly bool _ownsHttpClient;
     private readonly string _assetName;
+    private readonly TimeSpan _metadataReadTimeout;
 
-    public GitHubUpdateService(HttpClient? httpClient = null)
+    public GitHubUpdateService(
+        HttpClient? httpClient = null,
+        TimeSpan? metadataReadTimeout = null)
     {
         _assetName = AppPackage.UpdateAssetName;
+        _metadataReadTimeout = metadataReadTimeout ?? DefaultMetadataReadTimeout;
+        if (_metadataReadTimeout <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(metadataReadTimeout),
+                "元数据读取超时必须大于零。");
+        }
+
         _ownsHttpClient = httpClient is null;
         _httpClient = httpClient ?? new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
         if (_httpClient.DefaultRequestHeaders.UserAgent.Count == 0)
@@ -107,7 +123,6 @@ public sealed class GitHubUpdateService : IDisposable
             _httpClient.DefaultRequestHeaders.UserAgent.ParseAdd($"ImeTool/{AppVersion.Display}");
         }
 
-        _httpClient.DefaultRequestHeaders.Accept.ParseAdd("application/vnd.github+json");
     }
 
     public async Task<UpdateCheckResult> CheckForUpdatesAsync(
@@ -121,19 +136,208 @@ public sealed class GitHubUpdateService : IDisposable
                 Math.Max(0, currentVersion.Minor),
                 Math.Max(0, currentVersion.Build));
 
-        using HttpResponseMessage response = await _httpClient.GetAsync(LatestReleaseApi, cancellationToken);
-        if (response.StatusCode == HttpStatusCode.NotFound)
+        UpdateRelease? release;
+        try
+        {
+            release = await GetLatestReleaseFromWebAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            release = await GetLatestReleaseFromApiAsync(cancellationToken);
+        }
+
+        if (release is null)
         {
             return new UpdateCheckResult(UpdateAvailability.NoPublishedRelease, current, null);
         }
 
-        response.EnsureSuccessStatusCode();
-        string json = await response.Content.ReadAsStringAsync(cancellationToken);
-        UpdateRelease release = ParseRelease(json);
         UpdateAvailability availability = release.Version > current
             ? UpdateAvailability.Available
             : UpdateAvailability.UpToDate;
         return new UpdateCheckResult(availability, current, release);
+    }
+
+    private async Task<UpdateRelease?> GetLatestReleaseFromWebAsync(CancellationToken cancellationToken)
+    {
+        using var latestRequest = new HttpRequestMessage(HttpMethod.Get, LatestReleasePage);
+        latestRequest.Headers.Accept.ParseAdd("text/html");
+        using HttpResponseMessage latestResponse = await _httpClient.SendAsync(
+            latestRequest,
+            HttpCompletionOption.ResponseHeadersRead,
+            cancellationToken);
+        if (latestResponse.StatusCode == HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+
+        latestResponse.EnsureSuccessStatusCode();
+        Uri finalUri = latestResponse.RequestMessage?.RequestUri
+            ?? throw new InvalidDataException("无法确定 GitHub 最新 Release 地址。");
+        string tagName = ParseTagFromReleaseUri(finalUri);
+        if (!AppVersion.TryParseTag(tagName, out Version version))
+        {
+            throw new InvalidDataException("GitHub Release 的版本标签无效。");
+        }
+
+        string expandedAssetsUrl = $"{ReleasesBaseUrl}/expanded_assets/{Uri.EscapeDataString(tagName)}";
+        using var assetsRequest = new HttpRequestMessage(HttpMethod.Get, expandedAssetsUrl);
+        assetsRequest.Headers.Accept.ParseAdd("text/html");
+        using HttpResponseMessage assetsResponse = await _httpClient.SendAsync(
+            assetsRequest,
+            HttpCompletionOption.ResponseHeadersRead,
+            cancellationToken);
+        assetsResponse.EnsureSuccessStatusCode();
+        string html = await ReadLimitedStringAsync(assetsResponse.Content, cancellationToken);
+
+        string expectedAssetPath = $"/yixing233/ImeTool/releases/download/{tagName}/{_assetName}";
+        string digest = ParseAssetDigest(html, expectedAssetPath, _assetName);
+
+        var releasePageUri = new Uri($"{ReleasesBaseUrl}/tag/{Uri.EscapeDataString(tagName)}");
+        var downloadUri = new Uri(
+            $"{ReleasesBaseUrl}/download/{Uri.EscapeDataString(tagName)}/{Uri.EscapeDataString(_assetName)}");
+        return new UpdateRelease(
+            version,
+            tagName,
+            downloadUri,
+            digest,
+            releasePageUri,
+            string.Empty);
+    }
+
+    private async Task<UpdateRelease?> GetLatestReleaseFromApiAsync(CancellationToken cancellationToken)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, LatestReleaseApi);
+        request.Headers.Accept.ParseAdd("application/vnd.github+json");
+        request.Headers.TryAddWithoutValidation("X-GitHub-Api-Version", "2022-11-28");
+        using HttpResponseMessage response = await _httpClient.SendAsync(
+            request,
+            HttpCompletionOption.ResponseHeadersRead,
+            cancellationToken);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+
+        response.EnsureSuccessStatusCode();
+        string json = await ReadLimitedStringAsync(response.Content, cancellationToken);
+        return ParseRelease(json);
+    }
+
+    private static string ParseTagFromReleaseUri(Uri releaseUri)
+    {
+        Match match = Regex.Match(
+            releaseUri.AbsolutePath,
+            @"^/yixing233/ImeTool/releases/tag/(?<tag>[^/]+?)/?$",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        return match.Success
+            ? Uri.UnescapeDataString(match.Groups["tag"].Value)
+            : throw new InvalidDataException("GitHub 最新 Release 未重定向到有效版本页面。");
+    }
+
+    private static string ParseAssetDigest(string html, string assetPath, string assetName)
+    {
+        string expectedHref = $"href=\"{assetPath}\"";
+        int assetIndex = html.IndexOf(expectedHref, StringComparison.OrdinalIgnoreCase);
+        if (assetIndex < 0)
+        {
+            throw new InvalidDataException($"Release 缺少 {assetName}。");
+        }
+
+        if (html.IndexOf(expectedHref, assetIndex + expectedHref.Length, StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+            throw new InvalidDataException($"Release 包含多个 {assetName} 资源。");
+        }
+
+        int rowStart = FindAssetRowStart(html, assetIndex);
+        int rowEnd = html.IndexOf("</li>", assetIndex, StringComparison.OrdinalIgnoreCase);
+        if (rowStart < 0 || rowEnd < 0)
+        {
+            throw new InvalidDataException("GitHub Release 资源列表格式无效。");
+        }
+
+        string assetRow = html[rowStart..(rowEnd + "</li>".Length)];
+        string[] digests = Regex.Matches(
+                assetRow,
+                @"sha256:[a-fA-F0-9]{64}",
+                RegexOptions.CultureInvariant)
+            .Select(match => ParseDigest(match.Value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        return digests.Length == 1
+            ? digests[0]
+            : throw new InvalidDataException("Release 资源缺少唯一的 SHA-256 digest。");
+    }
+
+    private static int FindAssetRowStart(string html, int assetIndex)
+    {
+        int searchIndex = assetIndex;
+        while (searchIndex > 0)
+        {
+            int candidate = html.LastIndexOf("<li", searchIndex, StringComparison.OrdinalIgnoreCase);
+            if (candidate < 0)
+            {
+                return -1;
+            }
+
+            int suffixIndex = candidate + 3;
+            if (suffixIndex < html.Length &&
+                (html[suffixIndex] == '>' || char.IsWhiteSpace(html[suffixIndex])))
+            {
+                return candidate;
+            }
+
+            searchIndex = candidate - 1;
+        }
+
+        return -1;
+    }
+
+    private async Task<string> ReadLimitedStringAsync(
+        HttpContent content,
+        CancellationToken cancellationToken)
+    {
+        if (content.Headers.ContentLength is > MaxMetadataBytes)
+        {
+            throw new InvalidDataException("GitHub Release 元数据超过大小限制。");
+        }
+
+        using var timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutSource.CancelAfter(_metadataReadTimeout);
+        CancellationToken readToken = timeoutSource.Token;
+        try
+        {
+            await using Stream source = await content.ReadAsStreamAsync(readToken);
+            using var destination = new MemoryStream();
+            byte[] buffer = new byte[81920];
+            while (true)
+            {
+                int read = await source.ReadAsync(buffer, readToken);
+                if (read == 0)
+                {
+                    break;
+                }
+
+                if (destination.Length + read > MaxMetadataBytes)
+                {
+                    throw new InvalidDataException("GitHub Release 元数据超过大小限制。");
+                }
+
+                await destination.WriteAsync(buffer.AsMemory(0, read), readToken);
+            }
+
+            return System.Text.Encoding.UTF8.GetString(
+                destination.GetBuffer(),
+                0,
+                checked((int)destination.Length));
+        }
+        catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new TimeoutException("读取 GitHub Release 元数据超时。", exception);
+        }
     }
 
     public async Task<string> DownloadUpdateAsync(
