@@ -1,0 +1,214 @@
+using System.Diagnostics;
+using ImeTool.Native;
+
+namespace ImeTool.Ime;
+
+public interface IImeService
+{
+    ImeOpenStatus GetOpenStatus(IntPtr hwnd);
+    bool SetOpenStatus(IntPtr hwnd, bool isOpen);
+
+    TextInputMode GetInputMode(IntPtr hwnd) =>
+        TextInputModeResolver.Resolve(GetOpenStatus(hwnd), conversionModeKnown: false, conversionMode: 0);
+}
+
+public sealed class ImeService : IImeService, IDisposable
+{
+    private readonly ITsfImeService _tsfService;
+
+    public ImeService()
+        : this(new TsfImeService())
+    {
+    }
+
+    public ImeService(ITsfImeService tsfService)
+    {
+        _tsfService = tsfService;
+    }
+
+    public ImeOpenStatus GetOpenStatus(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero)
+        {
+            return ImeOpenStatus.Unknown;
+        }
+
+        return ImeStatusResolver.FirstKnown(
+            () => GetOpenStatusFromContext(hwnd),
+            () => GetOpenStatusFromDefaultImeWindow(hwnd),
+            () => _tsfService.GetOpenStatus(hwnd));
+    }
+
+    public TextInputMode GetInputMode(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero)
+        {
+            return TextInputMode.Unknown;
+        }
+
+        if (TryGetInputModeFromContext(hwnd, out TextInputMode mode))
+        {
+            return mode;
+        }
+
+        return TextInputModeResolver.Resolve(
+            GetOpenStatus(hwnd),
+            conversionModeKnown: false,
+            conversionMode: 0);
+    }
+
+    public bool SetOpenStatus(IntPtr hwnd, bool isOpen)
+    {
+        if (hwnd == IntPtr.Zero)
+        {
+            return false;
+        }
+
+        return ImeStatusResolver.FirstSuccessful(
+            () => SetOpenStatusWithContext(hwnd, isOpen),
+            () => SetOpenStatusWithDefaultImeWindow(hwnd, isOpen),
+            () => _tsfService.SetOpenStatus(hwnd, isOpen));
+    }
+
+    public void Dispose()
+    {
+        if (_tsfService is IDisposable disposable)
+        {
+            disposable.Dispose();
+        }
+    }
+
+    private static ImeOpenStatus GetOpenStatusFromContext(IntPtr hwnd)
+    {
+        IntPtr context = NativeMethods.ImmGetContext(hwnd);
+        if (context == IntPtr.Zero)
+        {
+            return ImeOpenStatus.Unknown;
+        }
+
+        try
+        {
+            return NativeMethods.ImmGetOpenStatus(context) ? ImeOpenStatus.Open : ImeOpenStatus.Closed;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"ImmGetOpenStatus failed for 0x{hwnd.ToInt64():X}: {ex}");
+            return ImeOpenStatus.Unknown;
+        }
+        finally
+        {
+            NativeMethods.ImmReleaseContext(hwnd, context);
+        }
+    }
+
+    private static bool TryGetInputModeFromContext(IntPtr hwnd, out TextInputMode mode)
+    {
+        mode = TextInputMode.Unknown;
+        IntPtr context = NativeMethods.ImmGetContext(hwnd);
+        if (context == IntPtr.Zero)
+        {
+            return false;
+        }
+
+        try
+        {
+            ImeOpenStatus openStatus = NativeMethods.ImmGetOpenStatus(context)
+                ? ImeOpenStatus.Open
+                : ImeOpenStatus.Closed;
+            bool conversionKnown = NativeMethods.ImmGetConversionStatus(
+                context,
+                out uint conversionMode,
+                out _);
+            mode = TextInputModeResolver.Resolve(openStatus, conversionKnown, conversionMode);
+            return mode != TextInputMode.Unknown;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"IME input-mode read failed for 0x{hwnd.ToInt64():X}: {ex}");
+            return false;
+        }
+        finally
+        {
+            NativeMethods.ImmReleaseContext(hwnd, context);
+        }
+    }
+
+    private static ImeOpenStatus GetOpenStatusFromDefaultImeWindow(IntPtr hwnd)
+    {
+        try
+        {
+            IntPtr imeWindow = NativeMethods.ImmGetDefaultIMEWnd(hwnd);
+            if (imeWindow == IntPtr.Zero)
+            {
+                return ImeOpenStatus.Unknown;
+            }
+
+            IntPtr result = NativeMethods.SendMessage(
+                imeWindow,
+                NativeMethods.WmImeControl,
+                NativeMethods.ImcGetOpenStatus,
+                IntPtr.Zero);
+            return result == IntPtr.Zero ? ImeOpenStatus.Closed : ImeOpenStatus.Open;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Default IME window get status failed for 0x{hwnd.ToInt64():X}: {ex}");
+            return ImeOpenStatus.Unknown;
+        }
+    }
+
+    private static bool SetOpenStatusWithContext(IntPtr hwnd, bool isOpen)
+    {
+        IntPtr context = NativeMethods.ImmGetContext(hwnd);
+        if (context == IntPtr.Zero)
+        {
+            return false;
+        }
+
+        try
+        {
+            bool ok = NativeMethods.ImmSetOpenStatus(context, isOpen);
+            if (!ok)
+            {
+                Debug.WriteLine($"ImmSetOpenStatus failed for 0x{hwnd.ToInt64():X}, isOpen={isOpen}.");
+            }
+
+            return ok;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"ImmSetOpenStatus threw for 0x{hwnd.ToInt64():X}: {ex}");
+            return false;
+        }
+        finally
+        {
+            NativeMethods.ImmReleaseContext(hwnd, context);
+        }
+    }
+
+    private static bool SetOpenStatusWithDefaultImeWindow(IntPtr hwnd, bool isOpen)
+    {
+        try
+        {
+            IntPtr imeWindow = NativeMethods.ImmGetDefaultIMEWnd(hwnd);
+            if (imeWindow == IntPtr.Zero)
+            {
+                Debug.WriteLine($"ImmGetDefaultIMEWnd returned null for 0x{hwnd.ToInt64():X}; cannot set IME status.");
+                return false;
+            }
+
+            NativeMethods.SendMessage(
+                imeWindow,
+                NativeMethods.WmImeControl,
+                NativeMethods.ImcSetOpenStatus,
+                isOpen ? new IntPtr(1) : IntPtr.Zero);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Default IME window set status failed for 0x{hwnd.ToInt64():X}: {ex}");
+            return false;
+        }
+    }
+}
+
