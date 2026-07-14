@@ -4,6 +4,9 @@ namespace ImeTool.Caret;
 
 public static class CaretGeometry
 {
+    private const int MinimumReliableNativeCaretHeight = 8;
+    private const int BoundsTolerance = 4;
+
     public static bool TryCreateExactRect(System.Windows.Rect source, out NativeMethods.RECT rect)
     {
         rect = default;
@@ -38,5 +41,37 @@ public static class CaretGeometry
             Bottom = bottom
         };
         return true;
+    }
+
+    public static bool TryNormalizeNativeRect(
+        NativeMethods.RECT source,
+        NativeMethods.RECT? textHostBounds,
+        out NativeMethods.RECT rect)
+    {
+        rect = source;
+        if (source.Width <= 0 || source.Height <= 0 || source.Height > 200)
+        {
+            return false;
+        }
+
+        if (source.Height < MinimumReliableNativeCaretHeight)
+        {
+            return false;
+        }
+
+        if (textHostBounds is not NativeMethods.RECT host)
+        {
+            return true;
+        }
+
+        if (host.Width <= 0 || host.Height <= 0)
+        {
+            return true;
+        }
+
+        return source.Left >= host.Left - BoundsTolerance &&
+               source.Right <= host.Right + BoundsTolerance &&
+               source.Top >= host.Top - BoundsTolerance &&
+               source.Bottom <= host.Bottom + BoundsTolerance;
     }
 }

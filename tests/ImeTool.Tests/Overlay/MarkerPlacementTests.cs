@@ -75,6 +75,30 @@ public sealed class MarkerPlacementTests
         Assert.Equal(200, result.Top);
     }
 
+    [Fact]
+    public void Visual_Left_Of_And_Above_Current_Caret_Is_Not_Clear()
+    {
+        Assert.False(MarkerPlacement.IsVisualClearOfCaret(
+            windowLeft: 480,
+            windowTop: 300,
+            safePaddingX: 6,
+            safePaddingY: 6,
+            new NativeMethods.RECT { Left = 500, Top = 310, Right = 501, Bottom = 342 }));
+    }
+
+    [Theory]
+    [InlineData(501, 300)]
+    [InlineData(480, 342)]
+    public void Visual_Right_Of_Or_Below_Current_Caret_Is_Clear(double left, double top)
+    {
+        Assert.True(MarkerPlacement.IsVisualClearOfCaret(
+            left,
+            top,
+            safePaddingX: 0,
+            safePaddingY: 0,
+            new NativeMethods.RECT { Left = 500, Top = 310, Right = 501, Bottom = 342 }));
+    }
+
     private static NativeMethods.RECT Caret(int left, int top) => new()
     {
         Left = left,

@@ -110,18 +110,21 @@ public sealed class MarkerOverlay : Window
         _pixelHeight = Math.Max(1, (int)Math.Ceiling(_lastHeightDip * dpiY));
         int pixelOffsetX = (int)Math.Round(_lastVisualOffsetDip * dpiX);
         int pixelOffsetY = (int)Math.Round(_lastVisualOffsetDip * dpiY);
+        int markerOffsetX = (int)Math.Round(normalized.OffsetX * dpiX);
+        int markerOffsetY = (int)Math.Round(normalized.OffsetY * dpiY);
         MarkerPlacementResult placement = TryGetWorkArea(caretRect, out NativeMethods.RECT workArea)
             ? MarkerPlacement.Calculate(
                 caretRect,
                 _pixelWidth,
                 _pixelHeight,
-                Math.Max(pixelOffsetX, pixelOffsetY),
-                settings.OffsetX,
-                settings.OffsetY,
+                pixelOffsetX,
+                pixelOffsetY,
+                markerOffsetX,
+                markerOffsetY,
                 workArea)
             : new MarkerPlacementResult(
-                caretRect.Right + settings.OffsetX - pixelOffsetX,
-                caretRect.Bottom + settings.OffsetY - pixelOffsetY,
+                caretRect.Right + markerOffsetX - pixelOffsetX,
+                caretRect.Bottom + markerOffsetY - pixelOffsetY,
                 false,
                 false);
 
@@ -133,8 +136,23 @@ public sealed class MarkerOverlay : Window
             targetTop = MarkerMotion.StabilizeTarget(_targetTop, targetTop, verticalTolerancePixels);
         }
 
+        bool targetClearsCaret = MarkerPlacement.IsVisualClearOfCaret(
+            targetLeft,
+            targetTop,
+            pixelOffsetX,
+            pixelOffsetY,
+            caretRect);
+        bool currentClearsCaret = MarkerPlacement.IsVisualClearOfCaret(
+            _currentLeft,
+            _currentTop,
+            pixelOffsetX,
+            pixelOffsetY,
+            caretRect);
+        bool mustSnapForCaretClearance = targetClearsCaret && !currentClearsCaret;
+
         if (!wasVisibleAndPositioned ||
             !_motionEnabled ||
+            mustSnapForCaretClearance ||
             !MarkerMotion.ShouldAnimate(_currentLeft, _currentTop, targetLeft, targetTop))
         {
             SnapToPosition(targetLeft, targetTop);

@@ -1,3 +1,5 @@
+using ImeTool.Native;
+
 namespace ImeTool.Caret;
 
 public readonly record struct UiAutomationCaretReadResult(
@@ -5,16 +7,18 @@ public readonly record struct UiAutomationCaretReadResult(
     CaretSnapshot Snapshot,
     bool TrustNativeCaret,
     IntPtr FocusHwnd,
-    string? FailureReason)
+    string? FailureReason,
+    NativeMethods.RECT? NativeCaretBoundsHint)
 {
     public static UiAutomationCaretReadResult Success(CaretSnapshot snapshot) =>
-        new(true, snapshot, true, snapshot.FocusHwnd, null);
+        new(true, snapshot, true, snapshot.FocusHwnd, null, null);
 
     public static UiAutomationCaretReadResult Failure(
         string failureReason,
         bool trustNativeCaret = false,
-        IntPtr focusHwnd = default) =>
-        new(false, default, trustNativeCaret, focusHwnd, failureReason);
+        IntPtr focusHwnd = default,
+        NativeMethods.RECT? nativeCaretBoundsHint = null) =>
+        new(false, default, trustNativeCaret, focusHwnd, failureReason, nativeCaretBoundsHint);
 }
 
 public sealed class UiAutomationCaretReader : IDisposable

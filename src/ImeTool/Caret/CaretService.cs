@@ -53,9 +53,13 @@ public sealed class CaretService : ICaretService, IDisposable
         if (foundNative &&
             hasAutomationResult &&
             automationResult.TrustNativeCaret &&
-            IsSameTargetProcess(nativeSnapshot.FocusHwnd, automationResult.FocusHwnd))
+            IsSameTargetProcess(nativeSnapshot.FocusHwnd, automationResult.FocusHwnd) &&
+            CaretGeometry.TryNormalizeNativeRect(
+                nativeSnapshot.ScreenRect,
+                automationResult.NativeCaretBoundsHint,
+                out NativeMethods.RECT normalizedNativeRect))
         {
-            snapshot = nativeSnapshot;
+            snapshot = nativeSnapshot with { ScreenRect = normalizedNativeRect };
             LastFailureReason = null;
             return true;
         }
@@ -170,6 +174,7 @@ public sealed class CaretService : ICaretService, IDisposable
             string? focusedFailure = null;
             bool trustNativeCaret = false;
             IntPtr trustedFocusHwnd = IntPtr.Zero;
+            NativeMethods.RECT? trustedTextHostBounds = null;
             foreach (AutomationElement candidate in candidates)
             {
                 try
@@ -179,7 +184,8 @@ public sealed class CaretService : ICaretService, IDisposable
                             out CaretSnapshot snapshot,
                             out string? failureReason,
                             out bool candidateTrustsNativeCaret,
-                            out IntPtr candidateFocusHwnd))
+                            out IntPtr candidateFocusHwnd,
+                            out NativeMethods.RECT? candidateTextHostBounds))
                     {
                         if (NativeMethods.GetForegroundWindow() != expectedForeground)
                         {
@@ -194,6 +200,9 @@ public sealed class CaretService : ICaretService, IDisposable
                     {
                         trustNativeCaret = true;
                         trustedFocusHwnd = candidateFocusHwnd;
+                        trustedTextHostBounds = SelectSmallerBounds(
+                            trustedTextHostBounds,
+                            candidateTextHostBounds);
                     }
 
                     focusedFailure ??= failureReason;
@@ -207,7 +216,8 @@ public sealed class CaretService : ICaretService, IDisposable
             return UiAutomationCaretReadResult.Failure(
                 focusedFailure ?? $"Focused UIA element was not editable: {DescribeElement(focused)}.",
                 trustNativeCaret,
-                trustedFocusHwnd);
+                trustedFocusHwnd,
+                trustedTextHostBounds);
         }
         catch (Exception exception)
         {
@@ -288,12 +298,14 @@ public sealed class CaretService : ICaretService, IDisposable
         out CaretSnapshot snapshot,
         out string? failureReason,
         out bool trustNativeCaret,
-        out IntPtr focusHwnd)
+        out IntPtr focusHwnd,
+        out NativeMethods.RECT? textHostBounds)
     {
         snapshot = default;
         failureReason = null;
         trustNativeCaret = false;
         focusHwnd = IntPtr.Zero;
+        textHostBounds = null;
 
         bool supportsTextPattern = element.TryGetCurrentPattern(TextPattern.Pattern, out object textPatternObject);
         bool supportsValuePattern = element.TryGetCurrentPattern(ValuePattern.Pattern, out object valuePatternObject);
@@ -340,6 +352,11 @@ public sealed class CaretService : ICaretService, IDisposable
             return false;
         }
 
+        if (TryGetElementBounds(element, out NativeMethods.RECT bounds))
+        {
+            textHostBounds = bounds;
+        }
+
         if (TryGetTextPatternRect(
                 textPatternObject,
                 supportsTextPattern,
@@ -355,6 +372,63 @@ public sealed class CaretService : ICaretService, IDisposable
 
         failureReason = $"Editable UIA element exposed no exact caret geometry: {DescribeElement(element)}.";
         return false;
+    }
+
+    private static NativeMethods.RECT? SelectSmallerBounds(
+        NativeMethods.RECT? current,
+        NativeMethods.RECT? candidate)
+    {
+        if (candidate is not NativeMethods.RECT candidateRect)
+        {
+            return current;
+        }
+
+        if (current is not NativeMethods.RECT currentRect)
+        {
+            return candidateRect;
+        }
+
+        long currentArea = (long)Math.Max(0, currentRect.Width) * Math.Max(0, currentRect.Height);
+        long candidateArea = (long)Math.Max(0, candidateRect.Width) * Math.Max(0, candidateRect.Height);
+        return candidateArea > 0 && (currentArea <= 0 || candidateArea < currentArea)
+            ? candidateRect
+            : currentRect;
+    }
+
+    private static bool TryGetElementBounds(
+        AutomationElement element,
+        out NativeMethods.RECT rect)
+    {
+        rect = default;
+        System.Windows.Rect bounds = element.Current.BoundingRectangle;
+        if (bounds.IsEmpty ||
+            bounds.Width <= 0 ||
+            bounds.Height <= 0 ||
+            !double.IsFinite(bounds.Left) ||
+            !double.IsFinite(bounds.Top) ||
+            !double.IsFinite(bounds.Right) ||
+            !double.IsFinite(bounds.Bottom))
+        {
+            return false;
+        }
+
+        int left = (int)Math.Round(bounds.Left);
+        int top = (int)Math.Round(bounds.Top);
+        int right = (int)Math.Round(bounds.Right);
+        int bottom = (int)Math.Round(bounds.Bottom);
+        if (right <= left || bottom <= top)
+        {
+            return false;
+        }
+
+        rect = new NativeMethods.RECT
+        {
+            Left = left,
+            Top = top,
+            Right = right,
+            Bottom = bottom
+        };
+        return true;
     }
 
     private static bool? GetIsReadOnly(
