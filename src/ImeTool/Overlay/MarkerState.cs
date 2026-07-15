@@ -84,6 +84,11 @@ public sealed class CapsLockService : ICapsLockService, IDisposable
         if (nCode >= 0)
         {
             NativeMethods.KBDLLHOOKSTRUCT key = Marshal.PtrToStructure<NativeMethods.KBDLLHOOKSTRUCT>(lParam);
+            if ((key.flags & NativeMethods.LlkhfInjected) != 0)
+            {
+                return NativeMethods.CallNextHookEx(_hook, nCode, wParam, lParam);
+            }
+
             int message = wParam.ToInt32();
             bool isKeyDown = message is NativeMethods.WmKeyDown or NativeMethods.WmSysKeyDown;
             bool isKeyUp = message is NativeMethods.WmKeyUp or NativeMethods.WmSysKeyUp;

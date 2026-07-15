@@ -39,6 +39,15 @@ public static class NativeMethods
     public const int ImcSetOpenStatus = 0x0006;
     public const uint ImeCmodeNative = 0x0001;
     public const int VkCapital = 0x14;
+    public const uint InputKeyboard = 1;
+    public const uint KeyeventfKeyup = 0x0002;
+    public const uint LlkhfInjected = 0x00000010;
+
+    public const int VkShift = 0x10;
+    public const int VkControl = 0x11;
+    public const int VkMenu = 0x12;
+    public const int VkLwin = 0x5B;
+    public const int VkRwin = 0x5C;
 
     public const uint ModAlt = 0x0001;
     public const uint ModControl = 0x0002;
@@ -109,6 +118,50 @@ public static class NativeMethods
         public UIntPtr dwExtraInfo;
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    public struct INPUT
+    {
+        public uint type;
+        public InputUnion U;
+    }
+
+    [StructLayout(LayoutKind.Explicit)]
+    public struct InputUnion
+    {
+        [FieldOffset(0)] public MOUSEINPUT mi;
+        [FieldOffset(0)] public KEYBDINPUT ki;
+        [FieldOffset(0)] public HARDWAREINPUT hi;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MOUSEINPUT
+    {
+        public int dx;
+        public int dy;
+        public uint mouseData;
+        public uint dwFlags;
+        public uint time;
+        public UIntPtr dwExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct KEYBDINPUT
+    {
+        public ushort wVk;
+        public ushort wScan;
+        public uint dwFlags;
+        public uint time;
+        public UIntPtr dwExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct HARDWAREINPUT
+    {
+        public uint uMsg;
+        public ushort wParamL;
+        public ushort wParamH;
+    }
+
     public delegate void WinEventDelegate(
         IntPtr hWinEventHook,
         uint eventType,
@@ -135,6 +188,9 @@ public static class NativeMethods
     [DllImport("user32.dll")]
     public static extern IntPtr GetForegroundWindow();
 
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern uint SendInput(uint cInputs, INPUT[] pInputs, int cbSize);
+
     [DllImport("user32.dll")]
     public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
 
@@ -143,6 +199,9 @@ public static class NativeMethods
 
     [DllImport("user32.dll")]
     public static extern short GetKeyState(int virtualKey);
+
+    [DllImport("user32.dll")]
+    public static extern short GetAsyncKeyState(int virtualKey);
 
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]

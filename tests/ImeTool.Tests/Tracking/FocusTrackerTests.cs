@@ -51,7 +51,7 @@ public sealed class FocusTrackerTests
     }
 
     [Fact]
-    public void Same_Window_Focus_Change_Does_Not_Restore_Repeatedly()
+    public void Same_Window_Focus_Change_Retargets_Pending_Restore_To_Child()
     {
         var ime = new FakeImeService();
         var windows = new FakeWindowInfoService();
@@ -67,8 +67,7 @@ public sealed class FocusTrackerTests
         tracker.HandleFocusChanged(focusA1);
         tracker.HandleFocusChanged(focusA2);
 
-        Assert.Single(ime.SetCalls);
-        Assert.Equal((focusA1, true), ime.SetCalls[0]);
+        Assert.Equal([(focusA1, true), (focusA2, true)], ime.SetCalls);
     }
 
     [Fact]
@@ -273,14 +272,151 @@ public sealed class FocusTrackerTests
         Assert.Contains((focus, true), ime.SetCalls);
     }
 
+    [Fact]
+    public void Remembered_State_Uses_Actual_Input_Mode_When_Open_Status_Stays_Open()
+    {
+        var ime = new FakeImeService();
+        var windows = new FakeWindowInfoService();
+        var store = new WindowStateStore();
+        var tracker = new FocusTracker(ime, store, windows);
+        IntPtr focus = new(51);
+        var key = new WindowKey(new IntPtr(5), 1005);
+        windows.Map(focus, key);
+        ime.StatusByHwnd[focus] = ImeOpenStatus.Open;
+        ime.ModeByHwnd[focus] = TextInputMode.English;
+
+        tracker.HandleFocusChanged(focus);
+        tracker.UpdateCurrentImeState(focus);
+
+        Assert.True(store.TryGet(key, out bool rememberedChinese));
+        Assert.False(rememberedChinese);
+    }
+
+    [Fact]
+    public void Validated_Mode_Mismatch_Uses_Shift_Fallback_After_Grace_Period()
+    {
+        var ime = new FakeImeService();
+        var windows = new FakeWindowInfoService();
+        var store = new WindowStateStore();
+        DateTimeOffset now = new(2026, 7, 15, 10, 0, 0, TimeSpan.Zero);
+        var tracker = new FocusTracker(ime, store, windows, nowProvider: () => now);
+        IntPtr focus = new(61);
+        var key = new WindowKey(new IntPtr(6), 1006);
+        windows.Map(focus, key);
+        store.Save(key, true);
+        ime.StatusByHwnd[focus] = ImeOpenStatus.Open;
+        ime.ModeByHwnd[focus] = TextInputMode.English;
+        ime.KeepInputModeAfterSet.Add(focus);
+        var applied = new List<(WindowKey Key, TextInputMode Mode)>();
+        tracker.FallbackInputModeApplied += (window, mode) => applied.Add((window, mode));
+
+        tracker.HandleFocusChanged(focus);
+        now = now.AddMilliseconds(250);
+        tracker.UpdateCurrentImeState(focus);
+        now = now.AddMilliseconds(200);
+        tracker.UpdateCurrentImeState(focus);
+
+        Assert.Equal([focus], ime.ToggleCalls);
+        Assert.Equal(TextInputMode.Chinese, ime.ModeByHwnd[focus]);
+        Assert.Equal([(key, TextInputMode.Chinese)], applied);
+    }
+
+    [Fact]
+    public void Unverified_Shift_Fallback_Does_Not_Report_False_Success()
+    {
+        var ime = new FakeImeService { KeepInputModeAfterToggle = true };
+        var windows = new FakeWindowInfoService();
+        var store = new WindowStateStore();
+        DateTimeOffset now = new(2026, 7, 15, 10, 0, 0, TimeSpan.Zero);
+        var tracker = new FocusTracker(ime, store, windows, nowProvider: () => now);
+        IntPtr focus = new(62);
+        var key = new WindowKey(new IntPtr(6), 1006);
+        windows.Map(focus, key);
+        store.Save(key, true);
+        ime.StatusByHwnd[focus] = ImeOpenStatus.Open;
+        ime.ModeByHwnd[focus] = TextInputMode.English;
+        ime.KeepInputModeAfterSet.Add(focus);
+        var applied = new List<(WindowKey Key, TextInputMode Mode)>();
+        tracker.FallbackInputModeApplied += (window, mode) => applied.Add((window, mode));
+
+        tracker.HandleFocusChanged(focus);
+        now = now.AddMilliseconds(250);
+        tracker.UpdateCurrentImeState(focus);
+        now = now.AddMilliseconds(200);
+        tracker.UpdateCurrentImeState(focus);
+
+        Assert.Single(ime.ToggleCalls);
+        Assert.Empty(applied);
+        Assert.Equal(TextInputMode.English, ime.ModeByHwnd[focus]);
+    }
+
+    [Fact]
+    public void Switching_Away_After_Unverified_Fallback_Prevents_Second_Shift_On_Return()
+    {
+        var ime = new FakeImeService { KeepInputModeAfterToggle = true };
+        var windows = new FakeWindowInfoService();
+        var store = new WindowStateStore();
+        DateTimeOffset now = new(2026, 7, 15, 10, 0, 0, TimeSpan.Zero);
+        var tracker = new FocusTracker(ime, store, windows, nowProvider: () => now);
+        IntPtr focusA = new(63);
+        IntPtr focusB = new(64);
+        var keyA = new WindowKey(new IntPtr(6), 1006);
+        var keyB = new WindowKey(new IntPtr(7), 1007);
+        windows.Map(focusA, keyA);
+        windows.Map(focusB, keyB);
+        store.Save(keyA, true);
+        store.Save(keyB, false);
+        ime.ModeByHwnd[focusA] = TextInputMode.English;
+        ime.ModeByHwnd[focusB] = TextInputMode.English;
+        ime.KeepInputModeAfterSet.Add(focusA);
+
+        tracker.HandleFocusChanged(focusA);
+        now = now.AddMilliseconds(250);
+        tracker.UpdateCurrentImeState(focusA);
+        tracker.HandleFocusChanged(focusB);
+        tracker.UpdateCurrentImeState(focusB);
+        tracker.HandleFocusChanged(focusA);
+        now = now.AddMilliseconds(250);
+        tracker.UpdateCurrentImeState(focusA);
+
+        Assert.Single(ime.ToggleCalls);
+    }
+
+    [Fact]
+    public void Unknown_Mode_With_Open_Status_Does_Not_Overwrite_Window_Memory()
+    {
+        var ime = new FakeImeService();
+        var windows = new FakeWindowInfoService();
+        var store = new WindowStateStore();
+        var tracker = new FocusTracker(ime, store, windows);
+        IntPtr focus = new(71);
+        var key = new WindowKey(new IntPtr(7), 1007);
+        windows.Map(focus, key);
+        ime.StatusByHwnd[focus] = ImeOpenStatus.Open;
+        ime.ModeByHwnd[focus] = TextInputMode.Unknown;
+
+        tracker.HandleFocusChanged(focus);
+        tracker.UpdateCurrentImeState(focus);
+
+        Assert.False(store.TryGet(key, out _));
+    }
+
     private sealed class FakeImeService : IImeService
     {
         public Dictionary<IntPtr, ImeOpenStatus> StatusByHwnd { get; } = new();
         public Dictionary<IntPtr, bool> SetResultsByHwnd { get; } = new();
         public HashSet<IntPtr> KeepStatusAfterSet { get; } = [];
+        public Dictionary<IntPtr, TextInputMode> ModeByHwnd { get; } = new();
+        public HashSet<IntPtr> KeepInputModeAfterSet { get; } = [];
         public List<(IntPtr Hwnd, bool IsOpen)> SetCalls { get; } = new();
+        public List<IntPtr> ToggleCalls { get; } = new();
+        public bool KeepInputModeAfterToggle { get; set; }
 
         public ImeOpenStatus GetOpenStatus(IntPtr hwnd) => StatusByHwnd.TryGetValue(hwnd, out ImeOpenStatus status) ? status : ImeOpenStatus.Unknown;
+
+        public TextInputMode GetInputMode(IntPtr hwnd) => ModeByHwnd.TryGetValue(hwnd, out TextInputMode mode)
+            ? mode
+            : TextInputModeResolver.Resolve(GetOpenStatus(hwnd), conversionModeKnown: false, conversionMode: 0);
 
         public bool SetOpenStatus(IntPtr hwnd, bool isOpen)
         {
@@ -293,6 +429,25 @@ public sealed class FocusTrackerTests
             if (!KeepStatusAfterSet.Contains(hwnd))
             {
                 StatusByHwnd[hwnd] = ImeOpenStatusExtensions.FromBool(isOpen);
+            }
+
+            if (!KeepInputModeAfterSet.Contains(hwnd))
+            {
+                ModeByHwnd[hwnd] = isOpen ? TextInputMode.Chinese : TextInputMode.English;
+            }
+
+            return true;
+        }
+
+        public bool ToggleInputMode(IntPtr hwnd)
+        {
+            ToggleCalls.Add(hwnd);
+            TextInputMode current = GetInputMode(hwnd);
+            if (!KeepInputModeAfterToggle)
+            {
+                ModeByHwnd[hwnd] = current == TextInputMode.Chinese
+                    ? TextInputMode.English
+                    : TextInputMode.Chinese;
             }
 
             return true;

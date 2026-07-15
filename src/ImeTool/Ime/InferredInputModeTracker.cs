@@ -17,7 +17,7 @@ public sealed class InferredInputModeTracker
 
         if (!_entries.TryGetValue(key, out Entry entry) || entry.ReportedMode != reportedMode)
         {
-            entry = new Entry(reportedMode, reportedMode);
+            entry = new Entry(reportedMode, reportedMode, HasEffectiveOverride: false);
             _entries[key] = entry;
         }
 
@@ -37,9 +37,29 @@ public sealed class InferredInputModeTracker
             TextInputMode.English => TextInputMode.Chinese,
             _ => TextInputMode.Unknown
         };
-        _entries[key] = entry with { EffectiveMode = toggled };
+        _entries[key] = entry with { EffectiveMode = toggled, HasEffectiveOverride = true };
         return toggled;
     }
+
+    public void SetEffectiveMode(WindowKey key, TextInputMode mode)
+    {
+        if (mode == TextInputMode.Unknown)
+        {
+            return;
+        }
+
+        if (_entries.TryGetValue(key, out Entry entry))
+        {
+            _entries[key] = entry with { EffectiveMode = mode, HasEffectiveOverride = true };
+        }
+        else
+        {
+            _entries[key] = new Entry(TextInputMode.Unknown, mode, HasEffectiveOverride: true);
+        }
+    }
+
+    public bool HasEffectiveOverride(WindowKey key) =>
+        _entries.TryGetValue(key, out Entry entry) && entry.HasEffectiveOverride;
 
     public int Prune(Func<IntPtr, bool> isAlive)
     {
@@ -52,5 +72,8 @@ public sealed class InferredInputModeTracker
         return dead.Length;
     }
 
-    private readonly record struct Entry(TextInputMode ReportedMode, TextInputMode EffectiveMode);
+    private readonly record struct Entry(
+        TextInputMode ReportedMode,
+        TextInputMode EffectiveMode,
+        bool HasEffectiveOverride);
 }

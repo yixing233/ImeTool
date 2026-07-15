@@ -8,6 +8,8 @@ public interface IImeService
     ImeOpenStatus GetOpenStatus(IntPtr hwnd);
     bool SetOpenStatus(IntPtr hwnd, bool isOpen);
 
+    bool ToggleInputMode(IntPtr hwnd) => false;
+
     TextInputMode GetInputMode(IntPtr hwnd) =>
         TextInputModeResolver.Resolve(GetOpenStatus(hwnd), conversionModeKnown: false, conversionMode: 0);
 }
@@ -52,10 +54,9 @@ public sealed class ImeService : IImeService, IDisposable
             return mode;
         }
 
-        return TextInputModeResolver.Resolve(
-            GetOpenStatus(hwnd),
-            conversionModeKnown: false,
-            conversionMode: 0);
+        return GetOpenStatus(hwnd) == ImeOpenStatus.Closed
+            ? TextInputMode.English
+            : TextInputMode.Unknown;
     }
 
     public bool SetOpenStatus(IntPtr hwnd, bool isOpen)
@@ -70,6 +71,9 @@ public sealed class ImeService : IImeService, IDisposable
             () => SetOpenStatusWithDefaultImeWindow(hwnd, isOpen),
             () => _tsfService.SetOpenStatus(hwnd, isOpen));
     }
+
+    public bool ToggleInputMode(IntPtr hwnd) =>
+        TsfImeService.IsChineseInputMethod(hwnd) && InputModeToggleSender.TrySendShift(hwnd);
 
     public void Dispose()
     {
@@ -120,7 +124,11 @@ public sealed class ImeService : IImeService, IDisposable
                 context,
                 out uint conversionMode,
                 out _);
-            mode = TextInputModeResolver.Resolve(openStatus, conversionKnown, conversionMode);
+            mode = conversionKnown
+                ? TextInputModeResolver.Resolve(openStatus, conversionModeKnown: true, conversionMode: conversionMode)
+                : openStatus == ImeOpenStatus.Closed
+                    ? TextInputMode.English
+                    : TextInputMode.Unknown;
             return mode != TextInputMode.Unknown;
         }
         catch (Exception ex)

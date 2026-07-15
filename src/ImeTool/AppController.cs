@@ -84,6 +84,7 @@ public sealed class AppController : IDisposable
         _trayIcon.SetStartupChecked(_settings.StartWithWindows);
 
         _eventHook.FocusChanged += OnFocusChanged;
+        _focusTracker.FallbackInputModeApplied += OnFallbackInputModeApplied;
         _trayIcon.ToggleEnabledRequested += OnToggleEnabledRequested;
         _trayIcon.ToggleStartupRequested += OnToggleStartupRequested;
         _trayIcon.SettingsRequested += OnSettingsRequested;
@@ -241,7 +242,9 @@ public sealed class AppController : IDisposable
                 WindowMemoryObservationResult observation = ObserveWindow(caret.FocusHwnd);
                 if (observation.HasPersistedState)
                 {
-                    _focusTracker.RequestRestoreCurrentWindowState(caret.FocusHwnd);
+                    _focusTracker.RequestRestoreCurrentWindowState(
+                        caret.FocusHwnd,
+                        validatedInputTarget: true);
                 }
             }
         }
@@ -251,13 +254,6 @@ public sealed class AppController : IDisposable
         }
 
         ImeOpenStatus status = _focusTracker.UpdateCurrentImeState(caret.FocusHwnd);
-        if (hasWindowKey && CanTrackWindowState(key))
-        {
-            ImeOpenStatus rememberedStatus = _stateStore.TryGet(key, out bool rememberedIsOpen)
-                ? ImeOpenStatusExtensions.FromBool(rememberedIsOpen)
-                : status;
-            _windowMemory.UpdateStatus(key, rememberedStatus);
-        }
         if (status == ImeOpenStatus.Unknown)
         {
             if (hasWindowKey && _stateStore.TryGet(key, out bool savedIsOpen))
@@ -272,17 +268,47 @@ public sealed class AppController : IDisposable
             }
         }
 
-        TextInputMode inputMode = _imeService.GetInputMode(caret.FocusHwnd);
+        TextInputMode reportedInputMode = _imeService.GetInputMode(caret.FocusHwnd);
+        TextInputMode inputMode = reportedInputMode;
+        if (hasWindowKey)
+        {
+            bool hasRememberedMode = _stateStore.TryGet(key, out bool rememberedChinese);
+            TextInputMode inferenceInput = reportedInputMode;
+            if (inferenceInput == TextInputMode.Unknown)
+            {
+                inferenceInput = hasRememberedMode
+                    ? (rememberedChinese ? TextInputMode.Chinese : TextInputMode.English)
+                    : status == ImeOpenStatus.Closed
+                        ? TextInputMode.English
+                        : TextInputMode.Chinese;
+            }
+
+            inputMode = _inferredInputModeTracker.Resolve(key, inferenceInput);
+            bool canRememberInputMode = reportedInputMode != TextInputMode.Unknown ||
+                                        hasRememberedMode ||
+                                        _inferredInputModeTracker.HasEffectiveOverride(key);
+            if (canRememberInputMode)
+            {
+                bool verifiedInputMode = reportedInputMode != TextInputMode.Unknown ||
+                                         _inferredInputModeTracker.HasEffectiveOverride(key);
+                _focusTracker.RecordCurrentInputMode(key, inputMode, verifiedInputMode);
+                if (CanTrackWindowState(key))
+                {
+                    _windowMemory.UpdateStatus(
+                        key,
+                        inputMode == TextInputMode.Chinese
+                            ? ImeOpenStatus.Open
+                            : ImeOpenStatus.Closed);
+                }
+            }
+
+            _activeInputWindow = key;
+            _activeFocusHwnd = caret.FocusHwnd;
+        }
+
         if (inputMode == TextInputMode.Unknown)
         {
             inputMode = status == ImeOpenStatus.Open ? TextInputMode.Chinese : TextInputMode.English;
-        }
-
-        if (hasWindowKey)
-        {
-            inputMode = _inferredInputModeTracker.Resolve(key, inputMode);
-            _activeInputWindow = key;
-            _activeFocusHwnd = caret.FocusHwnd;
         }
 
         MarkerState markerState = MarkerStateResolver.Resolve(inputMode, _capsLockService.IsCapsLockOn());
@@ -515,6 +541,12 @@ public sealed class AppController : IDisposable
         });
     }
 
+    private void OnFallbackInputModeApplied(WindowKey key, TextInputMode mode)
+    {
+        _inferredInputModeTracker.SetEffectiveMode(key, mode);
+        DiagnosticsLog.Write($"Input mode inference aligned with automatic restore: window={key}, mode={mode}.");
+    }
+
     private void ClearActiveInputTarget()
     {
         _activeInputWindow = null;
@@ -538,6 +570,7 @@ public sealed class AppController : IDisposable
         _updateCancellation.Cancel();
         _timer.Stop();
         _eventHook.Dispose();
+        _focusTracker.FallbackInputModeApplied -= OnFallbackInputModeApplied;
         _capsLockService.InputModeToggleRequested -= OnInputModeToggleRequested;
         _globalHotkeys.Dispose();
         _updateService.Dispose();

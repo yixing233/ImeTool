@@ -7,8 +7,9 @@ namespace ImeTool.Tracking;
 
 public sealed class FocusTracker
 {
-    private const int MaxRestoreAttempts = 3;
-    private static readonly TimeSpan RestoreRetryDelay = TimeSpan.FromMilliseconds(200);
+    private const int MaxRestoreAttempts = 5;
+    private static readonly TimeSpan RestoreRetryDelay = TimeSpan.FromMilliseconds(150);
+    private static readonly TimeSpan NativeRestoreGracePeriod = TimeSpan.FromMilliseconds(150);
 
     private readonly IImeService _imeService;
     private readonly WindowStateStore _stateStore;
@@ -22,8 +23,13 @@ public sealed class FocusTracker
     private IntPtr _lastRestoreAttemptHwnd;
     private int _restoreAttemptCount;
     private DateTimeOffset _nextRestoreAttemptAt;
+    private DateTimeOffset _restoreStartedAt;
+    private bool _fallbackToggleAttempted;
     private bool _skipNextStateSave;
     private bool _suppressStateSaveUntilWindowChange;
+    private WindowKey? _lastObservedModeWindow;
+    private TextInputMode _lastObservedMode;
+    private readonly HashSet<WindowKey> _unverifiedFallbackWindows = [];
 
     public FocusTracker(
         IImeService imeService,
@@ -41,7 +47,33 @@ public sealed class FocusTracker
 
     public WindowKey? CurrentWindow => _currentWindow;
 
-    public void RequestRestoreCurrentWindowState(IntPtr focusedHwnd)
+    public event Action<WindowKey, TextInputMode>? FallbackInputModeApplied;
+
+    public void RecordCurrentInputMode(
+        WindowKey key,
+        TextInputMode mode,
+        bool verifiedInputMode = true)
+    {
+        if (mode == TextInputMode.Unknown ||
+            _currentWindow != key ||
+            _pendingRestoreState.HasValue ||
+            _skipNextStateSave ||
+            _suppressStateSaveUntilWindowChange ||
+            !_canTrackState(key))
+        {
+            return;
+        }
+
+        _lastObservedModeWindow = key;
+        _lastObservedMode = mode;
+        _stateStore.Save(key, mode == TextInputMode.Chinese);
+        if (verifiedInputMode)
+        {
+            _unverifiedFallbackWindows.Remove(key);
+        }
+    }
+
+    public void RequestRestoreCurrentWindowState(IntPtr focusedHwnd, bool validatedInputTarget = false)
     {
         if (!_windowInfo.TryGetWindowKey(focusedHwnd, out WindowKey key) ||
             _currentWindow != key ||
@@ -53,12 +85,9 @@ public sealed class FocusTracker
         }
 
         _currentFocusHwnd = focusedHwnd;
-        _pendingRestoreState = savedIsOpen;
+        BeginPendingRestore(savedIsOpen);
         _suppressStateSaveUntilWindowChange = false;
-        _lastRestoreAttemptHwnd = IntPtr.Zero;
-        _restoreAttemptCount = 0;
-        _nextRestoreAttemptAt = DateTimeOffset.MinValue;
-        TryRestorePendingState(focusedHwnd);
+        TryRestorePendingState(focusedHwnd, validatedInputTarget);
     }
 
     public void HandleFocusChanged(IntPtr focusedHwnd)
@@ -73,16 +102,18 @@ public sealed class FocusTracker
             _currentFocusHwnd = focusedHwnd;
             if (!_canTrackState(newWindow))
             {
+                PreserveUnverifiedFallbackForCurrentWindow();
                 ClearPendingRestore();
                 _skipNextStateSave = false;
                 _suppressStateSaveUntilWindowChange = false;
                 return;
             }
 
-            TryRestorePendingState(focusedHwnd);
+            TryRestorePendingState(focusedHwnd, canConfirmInputMode: false);
             return;
         }
 
+        PreserveUnverifiedFallbackForCurrentWindow();
         SaveCurrentWindowState();
 
         _currentWindow = newWindow;
@@ -90,11 +121,13 @@ public sealed class FocusTracker
         ClearPendingRestore();
         _skipNextStateSave = false;
         _suppressStateSaveUntilWindowChange = false;
+        _lastObservedModeWindow = null;
+        _lastObservedMode = TextInputMode.Unknown;
 
         if (_canTrackState(newWindow) && _stateStore.TryGet(newWindow, out bool savedIsOpen))
         {
-            _pendingRestoreState = savedIsOpen;
-            TryRestorePendingState(focusedHwnd);
+            BeginPendingRestore(savedIsOpen);
+            TryRestorePendingState(focusedHwnd, canConfirmInputMode: false);
         }
     }
 
@@ -114,10 +147,11 @@ public sealed class FocusTracker
             _currentFocusHwnd = focusedHwnd;
             if (_canTrackState(key))
             {
-                TryRestorePendingState(focusedHwnd);
+                TryRestorePendingState(focusedHwnd, canConfirmInputMode: true);
             }
             else
             {
+                PreserveUnverifiedFallbackForCurrentWindow();
                 ClearPendingRestore();
                 _skipNextStateSave = false;
                 _suppressStateSaveUntilWindowChange = false;
@@ -125,14 +159,14 @@ public sealed class FocusTracker
         }
 
         ImeOpenStatus status = _imeService.GetOpenStatus(focusedHwnd);
-        bool? isOpen = status.ToNullableBool();
-        if (isOpen.HasValue &&
+        bool? rememberedChinese = ReadRememberedChineseState(focusedHwnd, status);
+        if (rememberedChinese.HasValue &&
             !_pendingRestoreState.HasValue &&
             !_skipNextStateSave &&
             !_suppressStateSaveUntilWindowChange &&
             _canTrackState(key))
         {
-            _stateStore.Save(key, isOpen.Value);
+            _stateStore.Save(key, rememberedChinese.Value);
         }
 
         _skipNextStateSave = false;
@@ -152,15 +186,19 @@ public sealed class FocusTracker
             return;
         }
 
-        ImeOpenStatus status = _imeService.GetOpenStatus(_currentFocusHwnd);
-        bool? isOpen = status.ToNullableBool();
-        if (isOpen.HasValue)
+        bool? rememberedChinese = _lastObservedModeWindow == _currentWindow &&
+                                  _lastObservedMode != TextInputMode.Unknown
+            ? _lastObservedMode == TextInputMode.Chinese
+            : ReadRememberedChineseState(
+                _currentFocusHwnd,
+                _imeService.GetOpenStatus(_currentFocusHwnd));
+        if (rememberedChinese.HasValue)
         {
-            _stateStore.Save(_currentWindow.Value, isOpen.Value);
+            _stateStore.Save(_currentWindow.Value, rememberedChinese.Value);
         }
     }
 
-    private void TryRestorePendingState(IntPtr focusedHwnd)
+    private void TryRestorePendingState(IntPtr focusedHwnd, bool canConfirmInputMode)
     {
         if (!_pendingRestoreState.HasValue ||
             focusedHwnd == IntPtr.Zero)
@@ -174,38 +212,140 @@ public sealed class FocusTracker
             return;
         }
 
+        bool savedIsChinese = _pendingRestoreState.Value;
+        TextInputMode desiredMode = savedIsChinese ? TextInputMode.Chinese : TextInputMode.English;
         _lastRestoreAttemptHwnd = focusedHwnd;
         _restoreAttemptCount++;
-        _nextRestoreAttemptAt = now + RestoreRetryDelay;
-        bool savedIsOpen = _pendingRestoreState.Value;
-        bool restored = _imeService.SetOpenStatus(focusedHwnd, savedIsOpen);
-        if (restored)
+
+        if (_fallbackToggleAttempted && canConfirmInputMode)
         {
-            DiagnosticsLog.Write(
-                $"IME state restored: window={_currentWindow}, " +
-                $"focus=0x{focusedHwnd.ToInt64():X}, isOpen={savedIsOpen}.");
-            _pendingRestoreState = null;
-            _skipNextStateSave = true;
-            _suppressStateSaveUntilWindowChange = false;
+            if (IsDesiredMode(focusedHwnd, desiredMode))
+            {
+                if (_currentWindow is WindowKey fallbackWindow)
+                {
+                    FallbackInputModeApplied?.Invoke(fallbackWindow, desiredMode);
+                    _unverifiedFallbackWindows.Remove(fallbackWindow);
+                }
+
+                CompleteRestore(focusedHwnd, desiredMode, "Shift fallback verified");
+                return;
+            }
+
+            DeferOrAbandonRestore(focusedHwnd, desiredMode, "Shift fallback was not verified", now);
             return;
         }
 
+        bool nativeRequestAccepted = _imeService.SetOpenStatus(focusedHwnd, savedIsChinese);
+        if (!canConfirmInputMode)
+        {
+            DiagnosticsLog.Write(
+                $"IME state restore requested: window={_currentWindow}, " +
+                $"focus=0x{focusedHwnd.ToInt64():X}, mode={desiredMode}, accepted={nativeRequestAccepted}; awaiting validated input target.");
+            _nextRestoreAttemptAt = now + RestoreRetryDelay;
+            return;
+        }
+
+        if (IsDesiredMode(focusedHwnd, desiredMode))
+        {
+            CompleteRestore(focusedHwnd, desiredMode, "native mode verified");
+            return;
+        }
+
+        if (now - _restoreStartedAt >= NativeRestoreGracePeriod &&
+            (_currentWindow is not WindowKey activeWindow || !_unverifiedFallbackWindows.Contains(activeWindow)) &&
+            _imeService.ToggleInputMode(focusedHwnd))
+        {
+            _fallbackToggleAttempted = true;
+            _nextRestoreAttemptAt = now + RestoreRetryDelay;
+            DiagnosticsLog.Write(
+                $"IME state native restore did not change validated mode; Shift fallback requested: " +
+                $"window={_currentWindow}, focus=0x{focusedHwnd.ToInt64():X}, mode={desiredMode}.");
+            return;
+        }
+
+        DeferOrAbandonRestore(
+            focusedHwnd,
+            desiredMode,
+            nativeRequestAccepted ? "native request accepted but mode mismatch" : "native request failed",
+            now);
+    }
+
+    private bool IsDesiredMode(IntPtr focusedHwnd, TextInputMode desiredMode)
+    {
+        TextInputMode currentMode = _imeService.GetInputMode(focusedHwnd);
+        if (currentMode != TextInputMode.Unknown)
+        {
+            return currentMode == desiredMode;
+        }
+
+        ImeOpenStatus status = _imeService.GetOpenStatus(focusedHwnd);
+        return desiredMode == TextInputMode.English && status == ImeOpenStatus.Closed;
+    }
+
+    private void CompleteRestore(IntPtr focusedHwnd, TextInputMode desiredMode, string method)
+    {
+        DiagnosticsLog.Write(
+            $"IME state restored and verified: window={_currentWindow}, " +
+            $"focus=0x{focusedHwnd.ToInt64():X}, mode={desiredMode}, method={method}.");
+        _pendingRestoreState = null;
+        _skipNextStateSave = true;
+        _suppressStateSaveUntilWindowChange = false;
+    }
+
+    private void DeferOrAbandonRestore(
+        IntPtr focusedHwnd,
+        TextInputMode desiredMode,
+        string reason,
+        DateTimeOffset now)
+    {
         if (_restoreAttemptCount >= MaxRestoreAttempts)
         {
             DiagnosticsLog.Write(
                 $"IME state restore abandoned after {_restoreAttemptCount} attempts: " +
-                $"window={_currentWindow}, focus=0x{focusedHwnd.ToInt64():X}, isOpen={savedIsOpen}.");
+                $"window={_currentWindow}, focus=0x{focusedHwnd.ToInt64():X}, mode={desiredMode}, reason={reason}.");
+            if (_fallbackToggleAttempted && _currentWindow is WindowKey currentWindow)
+            {
+                _unverifiedFallbackWindows.Add(currentWindow);
+            }
+
             ClearPendingRestore();
             _suppressStateSaveUntilWindowChange = true;
             return;
         }
 
+        _nextRestoreAttemptAt = now + RestoreRetryDelay;
         DiagnosticsLog.Write(
             $"IME state restore deferred: window={_currentWindow}, " +
-            $"focus=0x{focusedHwnd.ToInt64():X}, isOpen={savedIsOpen}.");
+            $"focus=0x{focusedHwnd.ToInt64():X}, mode={desiredMode}, reason={reason}.");
         Debug.WriteLine(
-            $"Failed to restore IME state {savedIsOpen} to window {_currentWindow} " +
-            $"focus 0x{focusedHwnd.ToInt64():X}; waiting for a new focus target.");
+            $"Failed to verify IME mode {desiredMode} for window {_currentWindow} " +
+            $"focus 0x{focusedHwnd.ToInt64():X}; {reason}.");
+    }
+
+    private bool? ReadRememberedChineseState(IntPtr focusedHwnd, ImeOpenStatus fallbackStatus) =>
+        _imeService.GetInputMode(focusedHwnd) switch
+        {
+            TextInputMode.Chinese => true,
+            TextInputMode.English => false,
+            _ => fallbackStatus == ImeOpenStatus.Closed ? false : null
+        };
+
+    private void BeginPendingRestore(bool savedIsChinese)
+    {
+        _pendingRestoreState = savedIsChinese;
+        _lastRestoreAttemptHwnd = IntPtr.Zero;
+        _restoreAttemptCount = 0;
+        _nextRestoreAttemptAt = DateTimeOffset.MinValue;
+        _restoreStartedAt = _nowProvider();
+        _fallbackToggleAttempted = false;
+    }
+
+    private void PreserveUnverifiedFallbackForCurrentWindow()
+    {
+        if (_fallbackToggleAttempted && _currentWindow is WindowKey currentWindow)
+        {
+            _unverifiedFallbackWindows.Add(currentWindow);
+        }
     }
 
     private void ClearPendingRestore()
@@ -214,5 +354,7 @@ public sealed class FocusTracker
         _lastRestoreAttemptHwnd = IntPtr.Zero;
         _restoreAttemptCount = 0;
         _nextRestoreAttemptAt = DateTimeOffset.MinValue;
+        _restoreStartedAt = DateTimeOffset.MinValue;
+        _fallbackToggleAttempted = false;
     }
 }

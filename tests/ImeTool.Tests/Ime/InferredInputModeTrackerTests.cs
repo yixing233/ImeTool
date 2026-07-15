@@ -43,4 +43,17 @@ public sealed class InferredInputModeTrackerTests
         Assert.Equal(TextInputMode.English, tracker.Resolve(first, TextInputMode.Chinese));
         Assert.Equal(TextInputMode.Chinese, tracker.Resolve(second, TextInputMode.Chinese));
     }
+
+    [Fact]
+    public void Restored_Effective_Mode_Overrides_A_Stale_Reported_Mode()
+    {
+        var tracker = new InferredInputModeTracker();
+        var window = new WindowKey(new IntPtr(1), 10);
+        tracker.Resolve(window, TextInputMode.English);
+
+        tracker.SetEffectiveMode(window, TextInputMode.Chinese);
+
+        Assert.Equal(TextInputMode.Chinese, tracker.Resolve(window, TextInputMode.English));
+        Assert.True(tracker.HasEffectiveOverride(window));
+    }
 }
