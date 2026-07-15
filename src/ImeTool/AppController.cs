@@ -162,7 +162,6 @@ public sealed class AppController : IDisposable
             _overlay.HideMarker(immediate: true);
             if (_settings.Enabled)
             {
-                ObserveWindow(hwnd);
                 _focusTracker.HandleFocusChanged(hwnd);
             }
         });
@@ -209,12 +208,9 @@ public sealed class AppController : IDisposable
         bool hasWindowKey = _windowInfoService.TryGetWindowKey(caret.FocusHwnd, out WindowKey key);
         if (hasWindowKey)
         {
-            if (!_windowMemory.Contains(key))
-            {
-                ObserveWindow(caret.FocusHwnd);
-            }
-
-            if (!_windowInfoService.IsWindowVisible(key.Hwnd) || _windowInfoService.IsIconic(key.Hwnd))
+            bool isVisible = _windowInfoService.IsWindowVisible(key.Hwnd);
+            bool isMinimized = _windowInfoService.IsIconic(key.Hwnd);
+            if (!isVisible || isMinimized)
             {
                 ClearActiveInputTarget();
                 DiagnosticsLog.WriteThrottled($"Marker hidden: window not visible or minimized {key}.");
@@ -231,6 +227,18 @@ public sealed class AppController : IDisposable
                 _markerVisibility.Reset();
                 _overlay.HideMarker();
                 return;
+            }
+
+            if (!_windowMemory.Contains(key) &&
+                WindowMemoryObservationPolicy.ShouldObserve(
+                    hasValidatedTextCaret: true,
+                    hasWindowKey: true,
+                    isOwnProcess: false,
+                    isVisible: isVisible,
+                    isMinimized: isMinimized,
+                    isExcluded: rule.Excluded))
+            {
+                ObserveWindow(caret.FocusHwnd);
             }
         }
         else
