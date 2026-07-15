@@ -160,12 +160,14 @@ public sealed record MarkerAppearanceSettings
 
 public sealed record AppSettings
 {
-    public int SettingsVersion { get; init; } = 11;
+    public int SettingsVersion { get; init; } = 12;
     public bool Enabled { get; init; } = true;
     public bool StartWithWindows { get; init; } = false;
     public bool SilentStart { get; init; } = true;
     public bool AutoCheckForUpdates { get; init; } = true;
     public bool EnableWindowMemory { get; init; } = true;
+    public bool PersistWindowMemory { get; init; } = false;
+    public string WindowMemoryStoragePath { get; init; } = string.Empty;
     public SettingsWindowBackdrop SettingsBackdrop { get; init; } = SettingsWindowBackdrop.Acrylic;
     public MarkerAppearanceSettings Marker { get; init; } = new();
     public MarkerBehaviorSettings MarkerBehavior { get; init; } = new();
@@ -184,7 +186,8 @@ public sealed record AppSettings
 
         return this with
         {
-            SettingsVersion = 11,
+            SettingsVersion = 12,
+            WindowMemoryStoragePath = WindowMemoryStoragePath?.Trim() ?? string.Empty,
             SettingsBackdrop = Enum.IsDefined(SettingsBackdrop)
                 ? SettingsBackdrop
                 : SettingsWindowBackdrop.Acrylic,

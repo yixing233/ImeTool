@@ -66,6 +66,7 @@ public sealed class AppController : IDisposable
         _imeService = new ImeService();
         _stateStore = new WindowStateStore();
         _windowMemory = new WindowMemoryManager(_stateStore, _settings.EnableWindowMemory);
+        ConfigureWindowMemoryPersistence(_settings);
         _processNameResolver = new ProcessNameResolver();
         _applicationRuleMatcher = new ApplicationRuleMatcher(_settings.ApplicationRules);
         _focusTracker = new FocusTracker(
@@ -229,8 +230,7 @@ public sealed class AppController : IDisposable
                 return;
             }
 
-            if (!_windowMemory.Contains(key) &&
-                WindowMemoryObservationPolicy.ShouldObserve(
+            if (WindowMemoryObservationPolicy.ShouldObserve(
                     hasValidatedTextCaret: true,
                     hasWindowKey: true,
                     isOwnProcess: false,
@@ -238,7 +238,11 @@ public sealed class AppController : IDisposable
                     isMinimized: isMinimized,
                     isExcluded: rule.Excluded))
             {
-                ObserveWindow(caret.FocusHwnd);
+                WindowMemoryObservationResult observation = ObserveWindow(caret.FocusHwnd);
+                if (observation.HasPersistedState)
+                {
+                    _focusTracker.RequestRestoreCurrentWindowState(caret.FocusHwnd);
+                }
             }
         }
         else
@@ -247,9 +251,12 @@ public sealed class AppController : IDisposable
         }
 
         ImeOpenStatus status = _focusTracker.UpdateCurrentImeState(caret.FocusHwnd);
-        if (hasWindowKey)
+        if (hasWindowKey && CanTrackWindowState(key))
         {
-            _windowMemory.UpdateStatus(key, status);
+            ImeOpenStatus rememberedStatus = _stateStore.TryGet(key, out bool rememberedIsOpen)
+                ? ImeOpenStatusExtensions.FromBool(rememberedIsOpen)
+                : status;
+            _windowMemory.UpdateStatus(key, rememberedStatus);
         }
         if (status == ImeOpenStatus.Unknown)
         {
@@ -359,7 +366,12 @@ public sealed class AppController : IDisposable
         }
 
         _settings = newSettings;
+        ConfigureWindowMemoryPersistence(_settings);
         _windowMemory.SetGlobalEnabled(_settings.EnableWindowMemory);
+        if (_settings.EnableWindowMemory && _settings.PersistWindowMemory)
+        {
+            RequestRememberedStateForForegroundWindow();
+        }
         _applicationRuleMatcher = new ApplicationRuleMatcher(_settings.ApplicationRules);
         _processNameResolver.Clear();
         _markerVisibility.Reset();
@@ -391,17 +403,47 @@ public sealed class AppController : IDisposable
         return _windowMemory.CanTrack(key) && !rule.Excluded && !rule.DisableStateRestore;
     }
 
-    private void ObserveWindow(IntPtr hwnd)
+    private WindowMemoryObservationResult ObserveWindow(IntPtr hwnd)
     {
         if (!_windowInfoService.TryGetWindowKey(hwnd, out WindowKey key) ||
             key.ProcessId == Environment.ProcessId)
         {
-            return;
+            return WindowMemoryObservationResult.None;
         }
 
         string processName = _processNameResolver.Resolve(key.ProcessId) ?? $"PID {key.ProcessId}";
         string title = ReadWindowTitle(key.Hwnd);
-        _windowMemory.ObserveWindow(key, title, processName, DateTimeOffset.Now);
+        return _windowMemory.ObserveWindow(key, title, processName, DateTimeOffset.Now);
+    }
+
+    private void ConfigureWindowMemoryPersistence(AppSettings settings)
+    {
+        if (!settings.PersistWindowMemory)
+        {
+            _windowMemory.ConfigurePersistence(enabled: false, persistenceStore: null);
+            return;
+        }
+
+        try
+        {
+            _windowMemory.ConfigurePersistence(
+                enabled: true,
+                new WindowMemoryPersistenceStore(settings.WindowMemoryStoragePath));
+        }
+        catch (Exception exception)
+        {
+            DiagnosticsLog.Write($"Window memory persistence configuration failed: {exception.Message}");
+            _windowMemory.ConfigurePersistence(enabled: false, persistenceStore: null);
+        }
+    }
+
+    private void RequestRememberedStateForForegroundWindow()
+    {
+        IntPtr foregroundWindow = NativeMethods.GetForegroundWindow();
+        if (foregroundWindow != IntPtr.Zero)
+        {
+            _focusTracker.RequestRestoreCurrentWindowState(foregroundWindow);
+        }
     }
 
     private bool IsWindowKeyAlive(WindowKey key) =>

@@ -23,6 +23,7 @@ public sealed class FocusTracker
     private int _restoreAttemptCount;
     private DateTimeOffset _nextRestoreAttemptAt;
     private bool _skipNextStateSave;
+    private bool _suppressStateSaveUntilWindowChange;
 
     public FocusTracker(
         IImeService imeService,
@@ -40,6 +41,26 @@ public sealed class FocusTracker
 
     public WindowKey? CurrentWindow => _currentWindow;
 
+    public void RequestRestoreCurrentWindowState(IntPtr focusedHwnd)
+    {
+        if (!_windowInfo.TryGetWindowKey(focusedHwnd, out WindowKey key) ||
+            _currentWindow != key ||
+            !_canTrackState(key) ||
+            _pendingRestoreState.HasValue ||
+            !_stateStore.TryGet(key, out bool savedIsOpen))
+        {
+            return;
+        }
+
+        _currentFocusHwnd = focusedHwnd;
+        _pendingRestoreState = savedIsOpen;
+        _suppressStateSaveUntilWindowChange = false;
+        _lastRestoreAttemptHwnd = IntPtr.Zero;
+        _restoreAttemptCount = 0;
+        _nextRestoreAttemptAt = DateTimeOffset.MinValue;
+        TryRestorePendingState(focusedHwnd);
+    }
+
     public void HandleFocusChanged(IntPtr focusedHwnd)
     {
         if (!_windowInfo.TryGetWindowKey(focusedHwnd, out WindowKey newWindow))
@@ -54,6 +75,7 @@ public sealed class FocusTracker
             {
                 ClearPendingRestore();
                 _skipNextStateSave = false;
+                _suppressStateSaveUntilWindowChange = false;
                 return;
             }
 
@@ -67,6 +89,7 @@ public sealed class FocusTracker
         _currentFocusHwnd = focusedHwnd;
         ClearPendingRestore();
         _skipNextStateSave = false;
+        _suppressStateSaveUntilWindowChange = false;
 
         if (_canTrackState(newWindow) && _stateStore.TryGet(newWindow, out bool savedIsOpen))
         {
@@ -97,6 +120,7 @@ public sealed class FocusTracker
             {
                 ClearPendingRestore();
                 _skipNextStateSave = false;
+                _suppressStateSaveUntilWindowChange = false;
             }
         }
 
@@ -105,6 +129,7 @@ public sealed class FocusTracker
         if (isOpen.HasValue &&
             !_pendingRestoreState.HasValue &&
             !_skipNextStateSave &&
+            !_suppressStateSaveUntilWindowChange &&
             _canTrackState(key))
         {
             _stateStore.Save(key, isOpen.Value);
@@ -121,6 +146,7 @@ public sealed class FocusTracker
             _currentFocusHwnd == IntPtr.Zero ||
             _pendingRestoreState.HasValue ||
             _skipNextStateSave ||
+            _suppressStateSaveUntilWindowChange ||
             !_canTrackState(_currentWindow.Value))
         {
             return;
@@ -160,6 +186,7 @@ public sealed class FocusTracker
                 $"focus=0x{focusedHwnd.ToInt64():X}, isOpen={savedIsOpen}.");
             _pendingRestoreState = null;
             _skipNextStateSave = true;
+            _suppressStateSaveUntilWindowChange = false;
             return;
         }
 
@@ -169,6 +196,7 @@ public sealed class FocusTracker
                 $"IME state restore abandoned after {_restoreAttemptCount} attempts: " +
                 $"window={_currentWindow}, focus=0x{focusedHwnd.ToInt64():X}, isOpen={savedIsOpen}.");
             ClearPendingRestore();
+            _suppressStateSaveUntilWindowChange = true;
             return;
         }
 

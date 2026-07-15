@@ -17,6 +17,8 @@ public sealed class SettingsServiceTests
         Assert.True(settings.SilentStart);
         Assert.True(settings.AutoCheckForUpdates);
         Assert.True(settings.EnableWindowMemory);
+        Assert.False(settings.PersistWindowMemory);
+        Assert.Equal(string.Empty, settings.WindowMemoryStoragePath);
         Assert.Equal(SettingsWindowBackdrop.Acrylic, settings.SettingsBackdrop);
         Assert.Equal(MarkerDisplayMode.Always, settings.MarkerBehavior.DisplayMode);
         Assert.True(settings.GlobalHotkeysEnabled);
@@ -115,7 +117,7 @@ public sealed class SettingsServiceTests
         Assert.Equal(2, actual.ApplicationRules.Count);
         Assert.Contains(actual.ApplicationRules, rule => rule.ProcessName == "Chrome" && rule.Excluded);
         Assert.Contains(actual.ApplicationRules, rule => rule.ProcessName == "Code" && rule.DisableStateRestore);
-        Assert.Equal(11, actual.SettingsVersion);
+        Assert.Equal(12, actual.SettingsVersion);
     }
 
     [Fact]
@@ -211,7 +213,7 @@ public sealed class SettingsServiceTests
         AppSettings actual = service.Load();
 
         Assert.True(actual.AutoCheckForUpdates);
-        Assert.Equal(11, actual.SettingsVersion);
+        Assert.Equal(12, actual.SettingsVersion);
 
     }
 
@@ -222,10 +224,17 @@ public sealed class SettingsServiceTests
         string path = Path.Combine(directory, "settings.json");
         var service = new SettingsService(path);
 
-        service.Save(new AppSettings { EnableWindowMemory = false });
+        service.Save(new AppSettings
+        {
+            EnableWindowMemory = false,
+            PersistWindowMemory = true,
+            WindowMemoryStoragePath = "D:\\ImeToolData\\memory.json"
+        });
         AppSettings actual = service.Load();
 
         Assert.False(actual.EnableWindowMemory);
+        Assert.True(actual.PersistWindowMemory);
+        Assert.Equal("D:\\ImeToolData\\memory.json", actual.WindowMemoryStoragePath);
     }
 
     [Fact]

@@ -228,7 +228,7 @@ public sealed class FocusTrackerTests
     }
 
     [Fact]
-    public void Restore_Gives_Up_After_Three_Attempts_And_Records_Actual_State()
+    public void Restore_Gives_Up_After_Three_Attempts_Without_Overwriting_Saved_State()
     {
         var ime = new FakeImeService();
         var windows = new FakeWindowInfoService();
@@ -252,7 +252,25 @@ public sealed class FocusTrackerTests
 
         Assert.Equal(3, ime.SetCalls.Count);
         Assert.True(store.TryGet(key, out bool savedState));
-        Assert.False(savedState);
+        Assert.True(savedState);
+    }
+
+    [Fact]
+    public void Persisted_State_Can_Be_Requested_After_Current_Window_Was_Observed()
+    {
+        var ime = new FakeImeService();
+        var windows = new FakeWindowInfoService();
+        var store = new WindowStateStore();
+        var tracker = new FocusTracker(ime, store, windows);
+        IntPtr focus = new(41);
+        var key = new WindowKey(new IntPtr(4), 1004);
+        windows.Map(focus, key);
+        tracker.HandleFocusChanged(focus);
+        store.Save(key, true);
+
+        tracker.RequestRestoreCurrentWindowState(focus);
+
+        Assert.Contains((focus, true), ime.SetCalls);
     }
 
     private sealed class FakeImeService : IImeService

@@ -203,6 +203,9 @@ public partial class SettingsWindow : FluentWindow
         SilentStartBox.IsChecked = normalized.SilentStart;
         AutoCheckUpdatesBox.IsChecked = normalized.AutoCheckForUpdates;
         WindowMemoryEnabledBox.IsChecked = normalized.EnableWindowMemory;
+        PersistWindowMemoryBox.IsChecked = normalized.PersistWindowMemory;
+        WindowMemoryStoragePathBox.Text = ResolveWindowMemoryStoragePathForDisplay(normalized.WindowMemoryStoragePath);
+        UpdateWindowMemoryPersistenceControls();
         UpdateStatusText.Text = $"当前版本 v{AppVersion.Display} · Windows x64";
         UpdateActionButton.Content = "检查更新";
         _availableUpdate = null;
@@ -472,6 +475,29 @@ public partial class SettingsWindow : FluentWindow
             return false;
         }
 
+        string windowMemoryStoragePath;
+        try
+        {
+            windowMemoryStoragePath = WindowMemoryPersistenceStore.ResolvePath(WindowMemoryStoragePathBox.Text);
+        }
+        catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            settings = Settings;
+            validationError = "窗口记忆存储路径无效";
+            return false;
+        }
+
+        if (PersistWindowMemoryBox.IsChecked == true)
+        {
+            var persistenceStore = new WindowMemoryPersistenceStore(windowMemoryStoragePath);
+            if (!persistenceStore.TryProbeWrite(out string? persistenceError))
+            {
+                settings = Settings;
+                validationError = $"窗口记忆存储路径不可写：{persistenceError}";
+                return false;
+            }
+        }
+
         settings = new AppSettings
         {
             Enabled = EnabledBox.IsChecked == true,
@@ -479,6 +505,8 @@ public partial class SettingsWindow : FluentWindow
             SilentStart = SilentStartBox.IsChecked == true,
             AutoCheckForUpdates = AutoCheckUpdatesBox.IsChecked == true,
             EnableWindowMemory = WindowMemoryEnabledBox.IsChecked == true,
+            PersistWindowMemory = PersistWindowMemoryBox.IsChecked == true,
+            WindowMemoryStoragePath = windowMemoryStoragePath,
             SettingsBackdrop = SelectedBackdrop(),
             Marker = ReadMarkerSettings(),
             MarkerBehavior = ReadMarkerBehaviorSettings(),
@@ -627,6 +655,58 @@ public partial class SettingsWindow : FluentWindow
         }
     }
 
+    private void OnWindowMemoryPersistenceChanged(object sender, RoutedEventArgs e)
+    {
+        if (_isInitialized)
+        {
+            UpdateWindowMemoryPersistenceControls();
+            RefreshWindowMemory();
+        }
+    }
+
+    private void OnBrowseWindowMemoryStorageClicked(object sender, RoutedEventArgs e)
+    {
+        string currentPath = ResolveWindowMemoryStoragePathForDisplay(WindowMemoryStoragePathBox.Text);
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            Title = "选择窗口记忆存储文件",
+            Filter = "JSON 文件|*.json|所有文件|*.*",
+            AddExtension = true,
+            DefaultExt = ".json",
+            FileName = Path.GetFileName(currentPath),
+            InitialDirectory = Path.GetDirectoryName(currentPath),
+            OverwritePrompt = false
+        };
+
+        if (dialog.ShowDialog(this) == true)
+        {
+            WindowMemoryStoragePathBox.Text = dialog.FileName;
+        }
+    }
+
+    private void OnResetWindowMemoryStorageClicked(object sender, RoutedEventArgs e) =>
+        WindowMemoryStoragePathBox.Text = WindowMemoryPersistenceStore.DefaultPath;
+
+    private void UpdateWindowMemoryPersistenceControls()
+    {
+        bool enabled = PersistWindowMemoryBox.IsChecked == true;
+        WindowMemoryStoragePathBox.IsEnabled = enabled;
+        BrowseWindowMemoryStorageButton.IsEnabled = enabled;
+        ResetWindowMemoryStorageButton.IsEnabled = enabled;
+    }
+
+    private static string ResolveWindowMemoryStoragePathForDisplay(string? path)
+    {
+        try
+        {
+            return WindowMemoryPersistenceStore.ResolvePath(path);
+        }
+        catch
+        {
+            return WindowMemoryPersistenceStore.DefaultPath;
+        }
+    }
+
     private void OnRefreshWindowMemoryClicked(object sender, RoutedEventArgs e) => RefreshWindowMemory();
 
     private void OnWindowMemoryEntriesChanged(object? sender, EventArgs e)
@@ -653,6 +733,7 @@ public partial class SettingsWindow : FluentWindow
         }
 
         bool globalEnabled = WindowMemoryEnabledBox.IsChecked == true;
+        bool persistenceEnabled = PersistWindowMemoryBox.IsChecked == true;
         IReadOnlyList<WindowMemoryEntry> entries = _windowMemorySource?.GetEntries() ?? [];
         WindowMemoryListItem[] items = entries
             .Select(entry => WindowMemoryListItem.From(entry, globalEnabled, DateTimeOffset.Now))
@@ -660,9 +741,18 @@ public partial class SettingsWindow : FluentWindow
         WindowMemoryItemsControl.ItemsSource = items;
         WindowMemoryItemsControl.IsEnabled = globalEnabled;
         WindowMemoryEmptyState.Visibility = items.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
-        WindowMemoryCountText.Text = items.Length == 0
-            ? (globalEnabled ? "尚未记录窗口" : "窗口记忆已关闭")
-            : $"已记录 {items.Length} 个窗口 · 单窗口开关立即生效";
+        if (persistenceEnabled && !string.IsNullOrWhiteSpace(_windowMemorySource?.PersistenceError))
+        {
+            WindowMemoryCountText.Foreground = new SolidColorBrush(MediaColor.FromRgb(0xC4, 0x2B, 0x1C));
+            WindowMemoryCountText.Text = $"持久化写入失败：{_windowMemorySource.PersistenceError}";
+        }
+        else
+        {
+            WindowMemoryCountText.Foreground = new SolidColorBrush(MediaColor.FromRgb(0x68, 0x68, 0x68));
+            WindowMemoryCountText.Text = items.Length == 0
+                ? (globalEnabled ? "尚未记录窗口" : "窗口记忆已关闭")
+                : $"已记录 {items.Length} 个窗口 · {(persistenceEnabled ? "持久化已开启" : "仅本次运行")}";
+        }
     }
 
     private void OnWindowMemoryItemToggled(object sender, RoutedEventArgs e)

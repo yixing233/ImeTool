@@ -518,7 +518,7 @@
                             <ui:SymbolIcon Symbol="WindowSettings20" Style="{StaticResource RowIconStyle}" />
                             <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="8,0,16,0">
                                 <TextBlock Text="启用窗口记忆" Style="{StaticResource RowTitleStyle}" />
-                                <TextBlock Text="在本次运行期间分别记录每个前台窗口的中英文状态，并在返回窗口时自动恢复；保存后生效"
+                                <TextBlock Text="为前台文本输入窗口分别记录中英文状态，并在返回窗口时自动恢复；保存后生效"
                                            Style="{StaticResource RowDescriptionStyle}" />
                             </StackPanel>
                             <ui:ToggleSwitch x:Name="WindowMemoryEnabledBox"
@@ -526,6 +526,62 @@
                                              VerticalAlignment="Center"
                                              Checked="OnWindowMemoryGlobalChanged"
                                              Unchecked="OnWindowMemoryGlobalChanged" />
+                        </Grid>
+
+                        <Border Height="1" Background="{DynamicResource SettingsDividerBrush}" Margin="60,0,0,0" />
+
+                        <Grid MinHeight="68" Margin="16,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="44" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <ui:SymbolIcon Symbol="Save28" Style="{StaticResource RowIconStyle}" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="8,0,16,0">
+                                <TextBlock Text="持久化窗口记忆" Style="{StaticResource RowTitleStyle}" />
+                                <TextBlock Text="将窗口状态写入 JSON 文件，软件重启后继续恢复"
+                                           Style="{StaticResource RowDescriptionStyle}" />
+                            </StackPanel>
+                            <ui:ToggleSwitch x:Name="PersistWindowMemoryBox"
+                                             Grid.Column="2"
+                                             VerticalAlignment="Center"
+                                             Checked="OnWindowMemoryPersistenceChanged"
+                                             Unchecked="OnWindowMemoryPersistenceChanged" />
+                        </Grid>
+
+                        <Border Height="1" Background="{DynamicResource SettingsDividerBrush}" Margin="60,0,0,0" />
+
+                        <Grid MinHeight="78" Margin="16,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="44" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="360" />
+                            </Grid.ColumnDefinitions>
+                            <ui:SymbolIcon Symbol="ArrowDownload24" Style="{StaticResource RowIconStyle}" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="8,0,16,0">
+                                <TextBlock Text="存储文件" Style="{StaticResource RowTitleStyle}" />
+                                <TextBlock Text="可选择任意可写入位置，默认保存在 AppData"
+                                           Style="{StaticResource RowDescriptionStyle}" />
+                            </StackPanel>
+                            <Grid Grid.Column="2" VerticalAlignment="Center">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="72" />
+                                    <ColumnDefinition Width="72" />
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="WindowMemoryStoragePathBox"
+                                         VerticalContentAlignment="Center" />
+                                <Button x:Name="BrowseWindowMemoryStorageButton"
+                                        Grid.Column="1"
+                                        Content="选择"
+                                        Margin="8,0,0,0"
+                                        Click="OnBrowseWindowMemoryStorageClicked" />
+                                <Button x:Name="ResetWindowMemoryStorageButton"
+                                        Grid.Column="2"
+                                        Content="默认"
+                                        Margin="8,0,0,0"
+                                        Click="OnResetWindowMemoryStorageClicked" />
+                            </Grid>
                         </Grid>
                     </StackPanel>
                 </Border>
@@ -875,9 +931,24 @@
                                 </Grid.ColumnDefinitions>
                                 <ComboBox x:Name="DetectedWindowsBox"
                                           Height="34"
-                                          DisplayMemberPath="DisplayName"
                                           SelectionChanged="OnDetectedWindowSelectionChanged"
-                                          ToolTip="显示进程名和窗口标题" />
+                                          ToolTip="显示进程名和窗口标题">
+                                    <ComboBox.ItemContainerStyle>
+                                        <Style TargetType="ComboBoxItem"
+                                               BasedOn="{StaticResource {x:Type ComboBoxItem}}">
+                                            <Setter Property="MaxWidth"
+                                                    Value="{Binding ActualWidth, ElementName=DetectedWindowsBox}" />
+                                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                        </Style>
+                                    </ComboBox.ItemContainerStyle>
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding DisplayName}"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       ToolTip="{Binding DisplayName}" />
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
                                 <Button Grid.Column="1"
                                         Content="刷新"
                                         Margin="8,0,0,0"
