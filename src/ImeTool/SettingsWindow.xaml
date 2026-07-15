@@ -58,6 +58,34 @@
             <Setter Property="VerticalAlignment" Value="Center" />
         </Style>
 
+        <Style x:Key="InlineTextBoxStyle"
+               TargetType="TextBox"
+               BasedOn="{StaticResource {x:Type TextBox}}">
+            <Setter Property="Height" Value="34" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+
+        <Style x:Key="InlineComboBoxStyle"
+               TargetType="ComboBox"
+               BasedOn="{StaticResource {x:Type ComboBox}}">
+            <Setter Property="Height" Value="34" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
+        <Style x:Key="InlineActionButtonStyle"
+               TargetType="Button"
+               BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Height" Value="34" />
+            <Setter Property="MinWidth" Value="0" />
+            <Setter Property="Padding" Value="10,0" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+
         <Style x:Key="SettingsNavigationItemStyle" TargetType="ListBoxItem">
             <Setter Property="Height" Value="44" />
             <Setter Property="Margin" Value="8,2" />
@@ -319,7 +347,7 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="44" />
                                 <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="150" />
+                                <ColumnDefinition Width="104" />
                             </Grid.ColumnDefinitions>
                             <ui:SymbolIcon Symbol="ArrowDownload24" Style="{StaticResource RowIconStyle}" />
                             <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="8,0,16,0">
@@ -330,7 +358,7 @@
                             <Button x:Name="UpdateActionButton"
                                     Grid.Column="2"
                                     Content="检查更新"
-                                    VerticalAlignment="Center"
+                                    Style="{StaticResource InlineActionButtonStyle}"
                                     Click="OnUpdateActionClicked" />
                         </Grid>
 
@@ -566,20 +594,22 @@
                             <Grid Grid.Column="2" VerticalAlignment="Center">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="72" />
-                                    <ColumnDefinition Width="72" />
+                                    <ColumnDefinition Width="8" />
+                                    <ColumnDefinition Width="64" />
+                                    <ColumnDefinition Width="8" />
+                                    <ColumnDefinition Width="64" />
                                 </Grid.ColumnDefinitions>
                                 <TextBox x:Name="WindowMemoryStoragePathBox"
-                                         VerticalContentAlignment="Center" />
+                                         Style="{StaticResource InlineTextBoxStyle}" />
                                 <Button x:Name="BrowseWindowMemoryStorageButton"
-                                        Grid.Column="1"
+                                        Grid.Column="2"
                                         Content="选择"
-                                        Margin="8,0,0,0"
+                                        Style="{StaticResource InlineActionButtonStyle}"
                                         Click="OnBrowseWindowMemoryStorageClicked" />
                                 <Button x:Name="ResetWindowMemoryStorageButton"
-                                        Grid.Column="2"
+                                        Grid.Column="4"
                                         Content="默认"
-                                        Margin="8,0,0,0"
+                                        Style="{StaticResource InlineActionButtonStyle}"
                                         Click="OnResetWindowMemoryStorageClicked" />
                             </Grid>
                         </Grid>
@@ -696,13 +726,15 @@
                             <Grid Grid.Column="2" VerticalAlignment="Center">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="68" />
-                                    <ColumnDefinition Width="68" />
+                                    <ColumnDefinition Width="8" />
+                                    <ColumnDefinition Width="64" />
+                                    <ColumnDefinition Width="8" />
+                                    <ColumnDefinition Width="64" />
                                 </Grid.ColumnDefinitions>
-                                <TextBox x:Name="ToggleEnabledHotkeyBox" IsReadOnly="True" Cursor="Hand" Tag="ToggleEnabled"
+                                <TextBox x:Name="ToggleEnabledHotkeyBox" Style="{StaticResource InlineTextBoxStyle}" IsReadOnly="True" Cursor="Hand" Tag="ToggleEnabled"
                                          PreviewMouseDown="OnHotkeyBoxMouseDown" PreviewKeyDown="OnHotkeyPreviewKeyDown" PreviewKeyUp="OnHotkeyPreviewKeyUp" />
-                                <Button Grid.Column="1" Content="录制" Margin="6,0,0,0" Tag="ToggleEnabled" Click="OnRecordHotkeyClicked" />
-                                <Button Grid.Column="2" Content="清除" Margin="6,0,0,0" Tag="ToggleEnabled" Click="OnClearHotkeyClicked" />
+                                <Button Grid.Column="2" Content="录制" Style="{StaticResource InlineActionButtonStyle}" Tag="ToggleEnabled" Click="OnRecordHotkeyClicked" />
+                                <Button Grid.Column="4" Content="清除" Style="{StaticResource InlineActionButtonStyle}" Tag="ToggleEnabled" Click="OnClearHotkeyClicked" />
                             </Grid>
                         </Grid>
 
@@ -722,13 +754,15 @@
                             <Grid Grid.Column="2" VerticalAlignment="Center">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="68" />
-                                    <ColumnDefinition Width="68" />
+                                    <ColumnDefinition Width="8" />
+                                    <ColumnDefinition Width="64" />
+                                    <ColumnDefinition Width="8" />
+                                    <ColumnDefinition Width="64" />
                                 </Grid.ColumnDefinitions>
-                                <TextBox x:Name="ToggleMarkerHotkeyBox" IsReadOnly="True" Cursor="Hand" Tag="ToggleMarkerVisibility"
+                                <TextBox x:Name="ToggleMarkerHotkeyBox" Style="{StaticResource InlineTextBoxStyle}" IsReadOnly="True" Cursor="Hand" Tag="ToggleMarkerVisibility"
                                          PreviewMouseDown="OnHotkeyBoxMouseDown" PreviewKeyDown="OnHotkeyPreviewKeyDown" PreviewKeyUp="OnHotkeyPreviewKeyUp" />
-                                <Button Grid.Column="1" Content="录制" Margin="6,0,0,0" Tag="ToggleMarkerVisibility" Click="OnRecordHotkeyClicked" />
-                                <Button Grid.Column="2" Content="清除" Margin="6,0,0,0" Tag="ToggleMarkerVisibility" Click="OnClearHotkeyClicked" />
+                                <Button Grid.Column="2" Content="录制" Style="{StaticResource InlineActionButtonStyle}" Tag="ToggleMarkerVisibility" Click="OnRecordHotkeyClicked" />
+                                <Button Grid.Column="4" Content="清除" Style="{StaticResource InlineActionButtonStyle}" Tag="ToggleMarkerVisibility" Click="OnClearHotkeyClicked" />
                             </Grid>
                         </Grid>
 
@@ -748,13 +782,15 @@
                             <Grid Grid.Column="2" VerticalAlignment="Center">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="68" />
-                                    <ColumnDefinition Width="68" />
+                                    <ColumnDefinition Width="8" />
+                                    <ColumnDefinition Width="64" />
+                                    <ColumnDefinition Width="8" />
+                                    <ColumnDefinition Width="64" />
                                 </Grid.ColumnDefinitions>
-                                <TextBox x:Name="OpenSettingsHotkeyBox" IsReadOnly="True" Cursor="Hand" Tag="OpenSettings"
+                                <TextBox x:Name="OpenSettingsHotkeyBox" Style="{StaticResource InlineTextBoxStyle}" IsReadOnly="True" Cursor="Hand" Tag="OpenSettings"
                                          PreviewMouseDown="OnHotkeyBoxMouseDown" PreviewKeyDown="OnHotkeyPreviewKeyDown" PreviewKeyUp="OnHotkeyPreviewKeyUp" />
-                                <Button Grid.Column="1" Content="录制" Margin="6,0,0,0" Tag="OpenSettings" Click="OnRecordHotkeyClicked" />
-                                <Button Grid.Column="2" Content="清除" Margin="6,0,0,0" Tag="OpenSettings" Click="OnClearHotkeyClicked" />
+                                <Button Grid.Column="2" Content="录制" Style="{StaticResource InlineActionButtonStyle}" Tag="OpenSettings" Click="OnRecordHotkeyClicked" />
+                                <Button Grid.Column="4" Content="清除" Style="{StaticResource InlineActionButtonStyle}" Tag="OpenSettings" Click="OnClearHotkeyClicked" />
                             </Grid>
                         </Grid>
 
@@ -774,13 +810,15 @@
                             <Grid Grid.Column="2" VerticalAlignment="Center">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="68" />
-                                    <ColumnDefinition Width="68" />
+                                    <ColumnDefinition Width="8" />
+                                    <ColumnDefinition Width="64" />
+                                    <ColumnDefinition Width="8" />
+                                    <ColumnDefinition Width="64" />
                                 </Grid.ColumnDefinitions>
-                                <TextBox x:Name="ClearWindowStateHotkeyBox" IsReadOnly="True" Cursor="Hand" Tag="ClearCurrentWindowState"
+                                <TextBox x:Name="ClearWindowStateHotkeyBox" Style="{StaticResource InlineTextBoxStyle}" IsReadOnly="True" Cursor="Hand" Tag="ClearCurrentWindowState"
                                          PreviewMouseDown="OnHotkeyBoxMouseDown" PreviewKeyDown="OnHotkeyPreviewKeyDown" PreviewKeyUp="OnHotkeyPreviewKeyUp" />
-                                <Button Grid.Column="1" Content="录制" Margin="6,0,0,0" Tag="ClearCurrentWindowState" Click="OnRecordHotkeyClicked" />
-                                <Button Grid.Column="2" Content="清除" Margin="6,0,0,0" Tag="ClearCurrentWindowState" Click="OnClearHotkeyClicked" />
+                                <Button Grid.Column="2" Content="录制" Style="{StaticResource InlineActionButtonStyle}" Tag="ClearCurrentWindowState" Click="OnRecordHotkeyClicked" />
+                                <Button Grid.Column="4" Content="清除" Style="{StaticResource InlineActionButtonStyle}" Tag="ClearCurrentWindowState" Click="OnClearHotkeyClicked" />
                             </Grid>
                         </Grid>
 
@@ -847,18 +885,21 @@
                             <Grid Grid.Column="2" VerticalAlignment="Center">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="38" />
-                                    <ColumnDefinition Width="72" />
+                                    <ColumnDefinition Width="8" />
+                                    <ColumnDefinition Width="28" />
+                                    <ColumnDefinition Width="8" />
+                                    <ColumnDefinition Width="64" />
                                 </Grid.ColumnDefinitions>
-                                <TextBox x:Name="StateColorBox" TextChanged="OnStateEditorChanged" />
+                                <TextBox x:Name="StateColorBox" Style="{StaticResource InlineTextBoxStyle}" TextChanged="OnStateEditorChanged" />
                                 <Border x:Name="StateColorSwatch"
-                                        Grid.Column="1"
+                                        Grid.Column="2"
                                         Width="28"
                                         Height="28"
+                                        VerticalAlignment="Center"
                                         CornerRadius="6"
                                         BorderBrush="#D0D0D0"
                                         BorderThickness="1" />
-                                <Button Grid.Column="2" Content="选择" Click="OnPickStateColorClicked" />
+                                <Button Grid.Column="4" Content="选择" Style="{StaticResource InlineActionButtonStyle}" Click="OnPickStateColorClicked" />
                             </Grid>
                         </Grid>
 
@@ -894,12 +935,14 @@
                             <Grid Grid.Column="2" VerticalAlignment="Center">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="72" />
-                                    <ColumnDefinition Width="72" />
+                                    <ColumnDefinition Width="8" />
+                                    <ColumnDefinition Width="64" />
+                                    <ColumnDefinition Width="8" />
+                                    <ColumnDefinition Width="64" />
                                 </Grid.ColumnDefinitions>
-                                <TextBox x:Name="StateImagePathBox" TextChanged="OnStateEditorChanged" />
-                                <Button Grid.Column="1" Content="选择" Margin="8,0,0,0" Click="OnBrowseStateImageClicked" />
-                                <Button Grid.Column="2" Content="清空" Margin="8,0,0,0" Click="OnClearStateImageClicked" />
+                                <TextBox x:Name="StateImagePathBox" Style="{StaticResource InlineTextBoxStyle}" TextChanged="OnStateEditorChanged" />
+                                <Button Grid.Column="2" Content="选择" Style="{StaticResource InlineActionButtonStyle}" Click="OnBrowseStateImageClicked" />
+                                <Button Grid.Column="4" Content="清空" Style="{StaticResource InlineActionButtonStyle}" Click="OnClearStateImageClicked" />
                             </Grid>
                         </Grid>
                     </StackPanel>
@@ -927,10 +970,11 @@
                             <Grid Grid.Row="1" Grid.Column="1" Margin="8,10,0,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="76" />
+                                    <ColumnDefinition Width="8" />
+                                    <ColumnDefinition Width="64" />
                                 </Grid.ColumnDefinitions>
                                 <ComboBox x:Name="DetectedWindowsBox"
-                                          Height="34"
+                                          Style="{StaticResource InlineComboBoxStyle}"
                                           SelectionChanged="OnDetectedWindowSelectionChanged"
                                           ToolTip="显示进程名和窗口标题">
                                     <ComboBox.ItemContainerStyle>
@@ -949,30 +993,32 @@
                                         </DataTemplate>
                                     </ComboBox.ItemTemplate>
                                 </ComboBox>
-                                <Button Grid.Column="1"
+                                <Button Grid.Column="2"
                                         Content="刷新"
-                                        Margin="8,0,0,0"
+                                        Style="{StaticResource InlineActionButtonStyle}"
                                         Click="OnRefreshWindowsClicked" />
                             </Grid>
 
                             <Grid Grid.Row="2" Grid.Column="1" Margin="8,8,0,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="124" />
+                                    <ColumnDefinition Width="8" />
                                     <ColumnDefinition Width="136" />
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
                                 <Button x:Name="AddDetectedWindowToExcludedButton"
                                         Content="加入完全排除"
+                                        Style="{StaticResource InlineActionButtonStyle}"
                                         IsEnabled="False"
                                         Click="OnAddDetectedWindowToExcludedClicked" />
                                 <Button x:Name="AddDetectedWindowToNoRestoreButton"
-                                        Grid.Column="1"
+                                        Grid.Column="2"
                                         Content="加入不恢复状态"
-                                        Margin="8,0,0,0"
+                                        Style="{StaticResource InlineActionButtonStyle}"
                                         IsEnabled="False"
                                         Click="OnAddDetectedWindowToNoRestoreClicked" />
                                 <TextBlock x:Name="DetectedWindowHintText"
-                                           Grid.Column="2"
+                                           Grid.Column="3"
                                            Margin="12,0,0,0"
                                            VerticalAlignment="Center"
                                            Foreground="#686868"
