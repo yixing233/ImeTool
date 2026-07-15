@@ -160,11 +160,12 @@ public sealed record MarkerAppearanceSettings
 
 public sealed record AppSettings
 {
-    public int SettingsVersion { get; init; } = 10;
+    public int SettingsVersion { get; init; } = 11;
     public bool Enabled { get; init; } = true;
     public bool StartWithWindows { get; init; } = false;
     public bool SilentStart { get; init; } = true;
     public bool AutoCheckForUpdates { get; init; } = true;
+    public bool EnableWindowMemory { get; init; } = true;
     public SettingsWindowBackdrop SettingsBackdrop { get; init; } = SettingsWindowBackdrop.Acrylic;
     public MarkerAppearanceSettings Marker { get; init; } = new();
     public MarkerBehaviorSettings MarkerBehavior { get; init; } = new();
@@ -183,7 +184,7 @@ public sealed record AppSettings
 
         return this with
         {
-            SettingsVersion = 10,
+            SettingsVersion = 11,
             SettingsBackdrop = Enum.IsDefined(SettingsBackdrop)
                 ? SettingsBackdrop
                 : SettingsWindowBackdrop.Acrylic,

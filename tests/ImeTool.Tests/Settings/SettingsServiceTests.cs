@@ -16,6 +16,7 @@ public sealed class SettingsServiceTests
         Assert.False(settings.StartWithWindows);
         Assert.True(settings.SilentStart);
         Assert.True(settings.AutoCheckForUpdates);
+        Assert.True(settings.EnableWindowMemory);
         Assert.Equal(SettingsWindowBackdrop.Acrylic, settings.SettingsBackdrop);
         Assert.Equal(MarkerDisplayMode.Always, settings.MarkerBehavior.DisplayMode);
         Assert.True(settings.GlobalHotkeysEnabled);
@@ -114,7 +115,7 @@ public sealed class SettingsServiceTests
         Assert.Equal(2, actual.ApplicationRules.Count);
         Assert.Contains(actual.ApplicationRules, rule => rule.ProcessName == "Chrome" && rule.Excluded);
         Assert.Contains(actual.ApplicationRules, rule => rule.ProcessName == "Code" && rule.DisableStateRestore);
-        Assert.Equal(10, actual.SettingsVersion);
+        Assert.Equal(11, actual.SettingsVersion);
     }
 
     [Fact]
@@ -210,7 +211,21 @@ public sealed class SettingsServiceTests
         AppSettings actual = service.Load();
 
         Assert.True(actual.AutoCheckForUpdates);
-        Assert.Equal(10, actual.SettingsVersion);
+        Assert.Equal(11, actual.SettingsVersion);
+
+    }
+
+    [Fact]
+    public void Save_Then_Load_RoundTrips_Window_Memory_Setting()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        string path = Path.Combine(directory, "settings.json");
+        var service = new SettingsService(path);
+
+        service.Save(new AppSettings { EnableWindowMemory = false });
+        AppSettings actual = service.Load();
+
+        Assert.False(actual.EnableWindowMemory);
     }
 
     [Fact]

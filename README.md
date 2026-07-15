@@ -8,6 +8,7 @@ Windows 输入法状态提示工具，在文本光标旁显示中文、英文及
 
 - 在文本光标附近显示中文、英文和大写锁定状态
 - 按顶层窗口独立记忆并恢复中英文输入状态
+- 提供窗口记忆总开关、运行期窗口列表和单窗口独立开关
 - 支持小圆点、文字胶囊和自定义图片标记
 - 可分别配置中文、英文和大写状态的颜色、文字与图片
 - 支持始终显示、切换时显示、输入时显示等显示策略
@@ -74,7 +75,7 @@ dotnet publish src\ImeTool\ImeTool.csproj `
   -o artifacts\installer-publish
 
 .\installer\build-installer.ps1 `
-  -Version 1.0.10 `
+  -Version 1.0.11 `
   -PublishDir artifacts\installer-publish `
   -OutputDir artifacts\installer
 ```

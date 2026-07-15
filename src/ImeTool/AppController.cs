@@ -1,4 +1,5 @@
 using System.Windows.Threading;
+using System.Text;
 using ImeTool.Caret;
 using ImeTool.Diagnostics;
 using ImeTool.Ime;
@@ -25,6 +26,7 @@ public sealed class AppController : IDisposable
     private readonly IWindowInfoService _windowInfoService;
     private readonly IImeService _imeService;
     private readonly WindowStateStore _stateStore;
+    private readonly WindowMemoryManager _windowMemory;
     private readonly FocusTracker _focusTracker;
     private readonly MarkerOverlay _overlay;
     private readonly WinEventHook _eventHook;
@@ -63,13 +65,14 @@ public sealed class AppController : IDisposable
         _windowInfoService = new WindowInfoService();
         _imeService = new ImeService();
         _stateStore = new WindowStateStore();
+        _windowMemory = new WindowMemoryManager(_stateStore, _settings.EnableWindowMemory);
         _processNameResolver = new ProcessNameResolver();
         _applicationRuleMatcher = new ApplicationRuleMatcher(_settings.ApplicationRules);
         _focusTracker = new FocusTracker(
             _imeService,
             _stateStore,
             _windowInfoService,
-            CanRestoreWindowState);
+            CanTrackWindowState);
         _overlay = new MarkerOverlay();
         _overlay.ConfigureBehavior(_settings.MarkerBehavior);
         _eventHook = new WinEventHook();
@@ -98,6 +101,12 @@ public sealed class AppController : IDisposable
     public void Start()
     {
         _timer.Start();
+        IntPtr foregroundWindow = NativeMethods.GetForegroundWindow();
+        if (foregroundWindow != IntPtr.Zero)
+        {
+            OnFocusChanged(this, foregroundWindow);
+        }
+
         if (_settings.AutoCheckForUpdates)
         {
             _ = CheckForUpdatesAfterStartupAsync(_updateCancellation.Token);
@@ -153,6 +162,7 @@ public sealed class AppController : IDisposable
             _overlay.HideMarker(immediate: true);
             if (_settings.Enabled)
             {
+                ObserveWindow(hwnd);
                 _focusTracker.HandleFocusChanged(hwnd);
             }
         });
@@ -170,7 +180,7 @@ public sealed class AppController : IDisposable
             return;
         }
 
-        _stateStore.Prune(_windowInfoService.IsWindow);
+        _windowMemory.Prune(IsWindowKeyAlive);
         _inferredInputModeTracker.Prune(_windowInfoService.IsWindow);
 
         if (!_caretService.TryGetCaret(out CaretSnapshot caret))
@@ -199,6 +209,11 @@ public sealed class AppController : IDisposable
         bool hasWindowKey = _windowInfoService.TryGetWindowKey(caret.FocusHwnd, out WindowKey key);
         if (hasWindowKey)
         {
+            if (!_windowMemory.Contains(key))
+            {
+                ObserveWindow(caret.FocusHwnd);
+            }
+
             if (!_windowInfoService.IsWindowVisible(key.Hwnd) || _windowInfoService.IsIconic(key.Hwnd))
             {
                 ClearActiveInputTarget();
@@ -224,6 +239,10 @@ public sealed class AppController : IDisposable
         }
 
         ImeOpenStatus status = _focusTracker.UpdateCurrentImeState(caret.FocusHwnd);
+        if (hasWindowKey)
+        {
+            _windowMemory.UpdateStatus(key, status);
+        }
         if (status == ImeOpenStatus.Unknown)
         {
             if (hasWindowKey && _stateStore.TryGet(key, out bool savedIsOpen))
@@ -303,7 +322,7 @@ public sealed class AppController : IDisposable
         }
 
         _settingsWindowOpen = true;
-        var window = new SettingsWindow(_settings)
+        var window = new SettingsWindow(_settings, _windowMemory)
         {
             Topmost = false
         };
@@ -332,6 +351,7 @@ public sealed class AppController : IDisposable
         }
 
         _settings = newSettings;
+        _windowMemory.SetGlobalEnabled(_settings.EnableWindowMemory);
         _applicationRuleMatcher = new ApplicationRuleMatcher(_settings.ApplicationRules);
         _processNameResolver.Clear();
         _markerVisibility.Reset();
@@ -357,10 +377,40 @@ public sealed class AppController : IDisposable
         return _applicationRuleMatcher.Match(_processNameResolver.Resolve(processId));
     }
 
-    private bool CanRestoreWindowState(WindowKey key)
+    private bool CanTrackWindowState(WindowKey key)
     {
         ApplicationRuleMatch rule = GetApplicationRule(key.ProcessId);
-        return !rule.Excluded && !rule.DisableStateRestore;
+        return _windowMemory.CanTrack(key) && !rule.Excluded && !rule.DisableStateRestore;
+    }
+
+    private void ObserveWindow(IntPtr hwnd)
+    {
+        if (!_windowInfoService.TryGetWindowKey(hwnd, out WindowKey key) ||
+            key.ProcessId == Environment.ProcessId)
+        {
+            return;
+        }
+
+        string processName = _processNameResolver.Resolve(key.ProcessId) ?? $"PID {key.ProcessId}";
+        string title = ReadWindowTitle(key.Hwnd);
+        _windowMemory.ObserveWindow(key, title, processName, DateTimeOffset.Now);
+    }
+
+    private bool IsWindowKeyAlive(WindowKey key) =>
+        _windowInfoService.TryGetWindowKey(key.Hwnd, out WindowKey current) && current == key;
+
+    private static string ReadWindowTitle(IntPtr hwnd)
+    {
+        int length = NativeMethods.GetWindowTextLength(hwnd);
+        if (length <= 0)
+        {
+            return string.Empty;
+        }
+
+        var title = new StringBuilder(length + 1);
+        return NativeMethods.GetWindowText(hwnd, title, title.Capacity) > 0
+            ? title.ToString()
+            : string.Empty;
     }
 
     private void OnGlobalHotkeyCommand(object? sender, GlobalHotkeyCommand command)

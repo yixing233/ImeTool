@@ -42,10 +42,26 @@ public sealed class WinEventHook : IDisposable
         uint dwEventThread,
         uint dwmsEventTime)
     {
-        if (hwnd != IntPtr.Zero)
+        IntPtr eventRoot = GetRootWindow(hwnd);
+        IntPtr foregroundRoot = GetRootWindow(NativeMethods.GetForegroundWindow());
+        if (IsForegroundEventTarget(eventRoot, foregroundRoot))
         {
             FocusChanged?.Invoke(this, hwnd);
         }
+    }
+
+    internal static bool IsForegroundEventTarget(IntPtr eventRoot, IntPtr foregroundRoot) =>
+        eventRoot != IntPtr.Zero && eventRoot == foregroundRoot;
+
+    private static IntPtr GetRootWindow(IntPtr hwnd)
+    {
+        if (hwnd == IntPtr.Zero)
+        {
+            return IntPtr.Zero;
+        }
+
+        IntPtr root = NativeMethods.GetAncestor(hwnd, NativeMethods.GaRoot);
+        return root == IntPtr.Zero ? hwnd : root;
     }
 
     public void Dispose()

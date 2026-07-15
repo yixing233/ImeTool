@@ -7,6 +7,8 @@ using System.Windows.Media.Imaging;
 using ImeTool.Overlay;
 using ImeTool.Hotkeys;
 using ImeTool.Settings;
+using ImeTool.State;
+using ImeTool.Ime;
 using ImeTool.Updates;
 using Border = System.Windows.Controls.Border;
 using ComboBoxItem = System.Windows.Controls.ComboBoxItem;
@@ -35,6 +37,52 @@ using WpfBackdropType = Wpf.Ui.Controls.WindowBackdropType;
 
 namespace ImeTool;
 
+internal sealed record WindowMemoryListItem(
+    WindowKey Key,
+    string Title,
+    string ProcessText,
+    bool Enabled,
+    string StatusText,
+    Brush StatusBrush,
+    string LastActiveText)
+{
+    public static WindowMemoryListItem From(
+        WindowMemoryEntry entry,
+        bool globalEnabled,
+        DateTimeOffset now)
+    {
+        (string statusText, MediaColor statusColor) = !globalEnabled
+            ? ("全局已关闭", MediaColor.FromRgb(0x78, 0x78, 0x78))
+            : !entry.Enabled
+                ? ("已暂停", MediaColor.FromRgb(0x78, 0x78, 0x78))
+                : entry.Status switch
+                {
+                    ImeOpenStatus.Open => ("中文", MediaColor.FromRgb(0xD1, 0x34, 0x38)),
+                    ImeOpenStatus.Closed => ("英文", MediaColor.FromRgb(0x0F, 0x6C, 0xBD)),
+                    _ => ("等待状态", MediaColor.FromRgb(0x78, 0x78, 0x78))
+                };
+
+        TimeSpan age = now - entry.LastActivatedAt;
+        string lastActiveText = age < TimeSpan.FromMinutes(1)
+            ? "刚刚激活"
+            : entry.LastActivatedAt.Date == now.Date
+                ? $"{entry.LastActivatedAt:HH:mm:ss} 激活"
+                : $"{entry.LastActivatedAt:MM-dd HH:mm} 激活";
+        string processText = entry.ProcessName.StartsWith("PID ", StringComparison.OrdinalIgnoreCase)
+            ? entry.ProcessName
+            : $"{entry.ProcessName}.exe";
+
+        return new WindowMemoryListItem(
+            entry.Key,
+            entry.Title,
+            processText,
+            entry.Enabled,
+            statusText,
+            new SolidColorBrush(statusColor),
+            lastActiveText);
+    }
+}
+
 public partial class SettingsWindow : FluentWindow
 {
     private bool _isInitialized;
@@ -43,6 +91,7 @@ public partial class SettingsWindow : FluentWindow
     private MarkerState _previewState = MarkerState.Chinese;
     private readonly Dictionary<MarkerState, StateAppearanceDraft> _stateDrafts = new();
     private readonly WindowDiscoveryService _windowDiscoveryService = new();
+    private readonly IWindowMemorySource? _windowMemorySource;
     private readonly GitHubUpdateService _updateService = new();
     private readonly CancellationTokenSource _updateCancellation = new();
     private MarkerState _stateEditorState = MarkerState.Chinese;
@@ -50,10 +99,16 @@ public partial class SettingsWindow : FluentWindow
     private bool _windowClosed;
     private bool _updatingStateEditor;
 
-    public SettingsWindow(AppSettings settings)
+    public SettingsWindow(AppSettings settings, IWindowMemorySource? windowMemorySource = null)
     {
         InitializeComponent();
         SettingsScroll.Resources[SystemParameters.VerticalScrollBarWidthKey] = 8d;
+
+        _windowMemorySource = windowMemorySource;
+        if (_windowMemorySource is not null)
+        {
+            _windowMemorySource.EntriesChanged += OnWindowMemoryEntriesChanged;
+        }
 
         Settings = settings.Normalize();
         InitializeStyleBox();
@@ -62,6 +117,7 @@ public partial class SettingsWindow : FluentWindow
         LoadFromSettings(Settings);
         _isInitialized = true;
         UpdateLivePreview();
+        RefreshWindowMemory();
         ShowSettingsPage(Math.Max(0, SettingsNavigation.SelectedIndex));
     }
 
@@ -70,6 +126,11 @@ public partial class SettingsWindow : FluentWindow
     protected override void OnClosed(EventArgs e)
     {
         _windowClosed = true;
+        if (_windowMemorySource is not null)
+        {
+            _windowMemorySource.EntriesChanged -= OnWindowMemoryEntriesChanged;
+        }
+
         _updateCancellation.Cancel();
         _updateService.Dispose();
         _updateCancellation.Dispose();
@@ -141,6 +202,7 @@ public partial class SettingsWindow : FluentWindow
         StartupBox.IsChecked = normalized.StartWithWindows;
         SilentStartBox.IsChecked = normalized.SilentStart;
         AutoCheckUpdatesBox.IsChecked = normalized.AutoCheckForUpdates;
+        WindowMemoryEnabledBox.IsChecked = normalized.EnableWindowMemory;
         UpdateStatusText.Text = $"当前版本 v{AppVersion.Display} · Windows x64";
         UpdateActionButton.Content = "检查更新";
         _availableUpdate = null;
@@ -339,9 +401,16 @@ public partial class SettingsWindow : FluentWindow
         SetSectionVisibility(DisplayBehaviorSectionTitle, DisplayBehaviorSectionGroup, pageIndex == 1);
         SetSectionVisibility(StateStyleSectionTitle, StateStyleSectionGroup, pageIndex == 1);
         SetSectionVisibility(PreviewSectionTitle, PreviewSectionGroup, pageIndex == 1);
-        SetSectionVisibility(HotkeysSectionTitle, HotkeysSectionGroup, pageIndex == 2);
-        SetSectionVisibility(ApplicationRulesSectionTitle, ApplicationRulesSectionGroup, pageIndex == 3);
-        if (pageIndex == 3)
+        SetSectionVisibility(WindowMemorySectionTitle, WindowMemorySectionGroup, pageIndex == 2);
+        SetSectionVisibility(WindowMemoryListSectionTitle, WindowMemoryListSectionGroup, pageIndex == 2);
+        SetSectionVisibility(HotkeysSectionTitle, HotkeysSectionGroup, pageIndex == 3);
+        SetSectionVisibility(ApplicationRulesSectionTitle, ApplicationRulesSectionGroup, pageIndex == 4);
+        if (pageIndex == 2)
+        {
+            RefreshWindowMemory();
+        }
+
+        if (pageIndex == 4)
         {
             RefreshDetectedWindows();
         }
@@ -409,6 +478,7 @@ public partial class SettingsWindow : FluentWindow
             StartWithWindows = StartupBox.IsChecked == true,
             SilentStart = SilentStartBox.IsChecked == true,
             AutoCheckForUpdates = AutoCheckUpdatesBox.IsChecked == true,
+            EnableWindowMemory = WindowMemoryEnabledBox.IsChecked == true,
             SettingsBackdrop = SelectedBackdrop(),
             Marker = ReadMarkerSettings(),
             MarkerBehavior = ReadMarkerBehaviorSettings(),
@@ -548,6 +618,64 @@ public partial class SettingsWindow : FluentWindow
     };
 
     private void OnRefreshWindowsClicked(object sender, RoutedEventArgs e) => RefreshDetectedWindows();
+
+    private void OnWindowMemoryGlobalChanged(object sender, RoutedEventArgs e)
+    {
+        if (_isInitialized)
+        {
+            RefreshWindowMemory();
+        }
+    }
+
+    private void OnRefreshWindowMemoryClicked(object sender, RoutedEventArgs e) => RefreshWindowMemory();
+
+    private void OnWindowMemoryEntriesChanged(object? sender, EventArgs e)
+    {
+        if (_windowClosed)
+        {
+            return;
+        }
+
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.BeginInvoke(RefreshWindowMemory);
+            return;
+        }
+
+        RefreshWindowMemory();
+    }
+
+    private void RefreshWindowMemory()
+    {
+        if (WindowMemoryItemsControl is null)
+        {
+            return;
+        }
+
+        bool globalEnabled = WindowMemoryEnabledBox.IsChecked == true;
+        IReadOnlyList<WindowMemoryEntry> entries = _windowMemorySource?.GetEntries() ?? [];
+        WindowMemoryListItem[] items = entries
+            .Select(entry => WindowMemoryListItem.From(entry, globalEnabled, DateTimeOffset.Now))
+            .ToArray();
+        WindowMemoryItemsControl.ItemsSource = items;
+        WindowMemoryItemsControl.IsEnabled = globalEnabled;
+        WindowMemoryEmptyState.Visibility = items.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+        WindowMemoryCountText.Text = items.Length == 0
+            ? (globalEnabled ? "尚未记录窗口" : "窗口记忆已关闭")
+            : $"已记录 {items.Length} 个窗口 · 单窗口开关立即生效";
+    }
+
+    private void OnWindowMemoryItemToggled(object sender, RoutedEventArgs e)
+    {
+        if (!_isInitialized ||
+            _windowMemorySource is null ||
+            sender is not Wpf.Ui.Controls.ToggleSwitch { Tag: WindowKey key } toggle)
+        {
+            return;
+        }
+
+        _windowMemorySource.SetWindowEnabled(key, toggle.IsChecked == true);
+    }
 
     private void OnDetectedWindowSelectionChanged(
         object sender,
