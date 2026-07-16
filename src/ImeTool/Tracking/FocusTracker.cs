@@ -311,7 +311,7 @@ public sealed class FocusTracker
     {
         if (_restoreAttemptCount >= MaxRestoreAttempts)
         {
-            DiagnosticsLog.Write(
+            DiagnosticsLog.Warn(
                 $"IME state restore abandoned after {_restoreAttemptCount} attempts: " +
                 $"window={_currentWindow}, focus=0x{focusedHwnd.ToInt64():X}, mode={desiredMode}, reason={reason}.");
             if (_fallbackToggleAttempted && _currentWindow is WindowKey currentWindow)

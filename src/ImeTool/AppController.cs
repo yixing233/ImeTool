@@ -30,6 +30,9 @@ public sealed class AppController : IDisposable
     private readonly WindowMemoryManager _windowMemory;
     private readonly FocusTracker _focusTracker;
     private readonly MarkerOverlay _overlay;
+    private readonly IMouseCursorService _mouseCursorService;
+    private readonly WindowBorderOverlay _windowBorderOverlay;
+    private readonly SystemCursorColorizer _systemCursorColorizer;
     private readonly WinEventHook _eventHook;
     private readonly TrayIcon _trayIcon;
     private readonly GlobalHotkeyService _globalHotkeys;
@@ -47,10 +50,11 @@ public sealed class AppController : IDisposable
 
     public AppController()
     {
-        DiagnosticsLog.Write("ImeTool starting.");
         _settingsService = new SettingsService();
         _startupManager = new StartupManager();
         _settings = _settingsService.Load();
+        DiagnosticsLog.Configure(_settings.StorageDirectory, _settings.LogLevel);
+        DiagnosticsLog.Info("ImeTool starting.");
         bool registryStartupEnabled = _startupManager.IsEnabled();
         if (_settings.StartWithWindows != registryStartupEnabled)
         {
@@ -84,6 +88,9 @@ public sealed class AppController : IDisposable
             CanRestoreWindowState);
         _overlay = new MarkerOverlay();
         _overlay.ConfigureBehavior(_settings.MarkerBehavior);
+        _mouseCursorService = new MouseCursorService();
+        _windowBorderOverlay = new WindowBorderOverlay();
+        _systemCursorColorizer = new SystemCursorColorizer();
         _eventHook = new WinEventHook();
         _trayIcon = new TrayIcon(_settings);
         _globalHotkeys = new GlobalHotkeyService();
@@ -143,7 +150,7 @@ public sealed class AppController : IDisposable
         }
         catch (Exception exception)
         {
-            DiagnosticsLog.Write($"Automatic update check failed: {exception.Message}");
+            DiagnosticsLog.Warn($"Automatic update check failed: {exception.Message}");
         }
     }
 
@@ -168,6 +175,7 @@ public sealed class AppController : IDisposable
             _caretStabilizer.Reset();
             _markerVisibility.Reset();
             _overlay.HideMarker(immediate: true);
+            HideAdditionalIndicators();
             if (_settings.Enabled)
             {
                 CacheApplicationRule(hwnd);
@@ -184,6 +192,7 @@ public sealed class AppController : IDisposable
             DiagnosticsLog.WriteThrottled("Marker hidden: app disabled.");
             _markerVisibility.Reset();
             _overlay.HideMarker();
+            HideAdditionalIndicators();
             return;
         }
 
@@ -192,11 +201,8 @@ public sealed class AppController : IDisposable
 
         if (!_caretService.TryGetCaret(out CaretSnapshot caret))
         {
-            _caretStabilizer.Reset();
-            _markerVisibility.Reset();
             string reason = _caretService.LastFailureReason ?? "no caret from GetGUIThreadInfo or UI Automation";
-            DiagnosticsLog.WriteThrottled($"Marker hidden: {reason}");
-            _overlay.HideMarker();
+            HandleMissingCaret(reason);
             return;
         }
 
@@ -208,6 +214,7 @@ public sealed class AppController : IDisposable
             DiagnosticsLog.WriteThrottled("Marker hidden: focus belongs to ImeTool.");
             _markerVisibility.Reset();
             _overlay.HideMarker();
+            HideAdditionalIndicators();
             return;
         }
 
@@ -223,6 +230,7 @@ public sealed class AppController : IDisposable
                 DiagnosticsLog.WriteThrottled($"Marker hidden: window not visible or minimized {key}.");
                 _markerVisibility.Reset();
                 _overlay.HideMarker();
+                HideAdditionalIndicators();
                 return;
             }
 
@@ -302,6 +310,11 @@ public sealed class AppController : IDisposable
         }
 
         MarkerState markerState = MarkerStateResolver.Resolve(inputMode, _capsLockService.IsCapsLockOn());
+        IntPtr indicatorWindow = hasWindowKey
+            ? key.Hwnd
+            : _windowInfoService.GetRootWindow(caret.FocusHwnd);
+        bool additionalIndicatorsAllowed = !rule.HideMarker && !_markerTemporarilyHidden;
+        UpdateAdditionalIndicators(indicatorWindow, markerState, additionalIndicatorsAllowed);
         bool strategyAllowsDisplay = _markerVisibility.ShouldShow(
             DateTimeOffset.UtcNow,
             _settings.MarkerBehavior,
@@ -339,6 +352,7 @@ public sealed class AppController : IDisposable
         {
             _markerVisibility.Reset();
             _overlay.HideMarker();
+            HideAdditionalIndicators();
         }
     }
 
@@ -389,6 +403,7 @@ public sealed class AppController : IDisposable
         }
 
         _settings = newSettings;
+        DiagnosticsLog.Configure(_settings.StorageDirectory, _settings.LogLevel);
         ConfigureWindowMemoryPersistence(_settings);
         _windowMemory.SetGlobalEnabled(_settings.EnableWindowMemory);
         if (_settings.EnableWindowMemory && _settings.PersistWindowMemory)
@@ -410,10 +425,17 @@ public sealed class AppController : IDisposable
         _settingsService.Save(_settings);
         _trayIcon.SetEnabledChecked(_settings.Enabled);
         _trayIcon.SetStartupChecked(_settings.StartWithWindows);
-        DiagnosticsLog.Write($"Settings saved: enabled={_settings.Enabled}, silentStart={_settings.SilentStart}, caretCapture={_settings.CaretCaptureMode}, style={_settings.Marker.Style}, size={_settings.Marker.Size}, offset=({_settings.Marker.OffsetX},{_settings.Marker.OffsetY}).");
+        DiagnosticsLog.Info($"Settings saved: enabled={_settings.Enabled}, silentStart={_settings.SilentStart}, logLevel={_settings.LogLevel}, storage={_settings.StorageDirectory}, caretCapture={_settings.CaretCaptureMode}, style={_settings.Marker.Style}, size={_settings.Marker.Size}, offset=({_settings.Marker.OffsetX},{_settings.Marker.OffsetY}).");
         if (!_settings.Enabled)
         {
             _overlay.HideMarker();
+            HideAdditionalIndicators();
+        }
+        else
+        {
+            // Apply removals immediately; enabled indicators will be refreshed
+            // from the active target on the next lightweight timer tick.
+            HideAdditionalIndicators();
         }
     }
 
@@ -487,11 +509,12 @@ public sealed class AppController : IDisposable
         {
             _windowMemory.ConfigurePersistence(
                 enabled: true,
-                new WindowMemoryPersistenceStore(settings.WindowMemoryStoragePath));
+                new WindowMemoryPersistenceStore(
+                    StoragePathService.GetWindowMemoryPath(settings.StorageDirectory)));
         }
         catch (Exception exception)
         {
-            DiagnosticsLog.Write($"Window memory persistence configuration failed: {exception.Message}");
+            DiagnosticsLog.Error($"Window memory persistence configuration failed: {exception.Message}");
             _windowMemory.ConfigurePersistence(enabled: false, persistenceStore: null);
         }
     }
@@ -521,6 +544,7 @@ public sealed class AppController : IDisposable
                 if (_markerTemporarilyHidden)
                 {
                     _overlay.HideMarker();
+                    HideAdditionalIndicators();
                 }
 
                 DiagnosticsLog.Write($"Temporary marker visibility changed: hidden={_markerTemporarilyHidden}.");
@@ -569,6 +593,9 @@ public sealed class AppController : IDisposable
         _trayIcon.Dispose();
         _overlay.HideMarker(immediate: true);
         _overlay.Close();
+        _windowBorderOverlay.HideIndicator();
+        _windowBorderOverlay.Close();
+        _systemCursorColorizer.Dispose();
         if (_capsLockService is IDisposable disposableCapsLockService)
         {
             disposableCapsLockService.Dispose();
@@ -583,5 +610,164 @@ public sealed class AppController : IDisposable
         {
             disposableCaretService.Dispose();
         }
+    }
+
+    private void HandleMissingCaret(string reason)
+    {
+        _caretStabilizer.Reset();
+        _markerVisibility.Reset();
+
+        AdditionalIndicatorSettings indicators = _settings.AdditionalIndicators;
+        if (!indicators.EnableWindowBorder &&
+            !indicators.EnableMouseMarker &&
+            !indicators.ColorizeIBeamCursor)
+        {
+            DiagnosticsLog.WriteThrottled($"Marker hidden: {reason}");
+            _overlay.HideMarker();
+            HideAdditionalIndicators();
+            return;
+        }
+
+        if (!TryResolveForegroundIndicatorContext(
+                out IntPtr focusHwnd,
+                out WindowKey windowKey,
+                out ApplicationRuleMatch rule,
+                out MarkerState markerState))
+        {
+            DiagnosticsLog.WriteThrottled($"Marker hidden: {reason}; no valid foreground indicator target.");
+            _overlay.HideMarker();
+            HideAdditionalIndicators();
+            return;
+        }
+
+        bool allowed = !rule.HideMarker && !_markerTemporarilyHidden;
+        UpdateAdditionalIndicators(windowKey.Hwnd, markerState, allowed);
+        bool cursorReadSucceeded = _mouseCursorService.TryGetCursor(out MouseCursorSnapshot cursor);
+        bool isOwnProcess = windowKey.ProcessId == Environment.ProcessId;
+        if (!MouseMarkerPolicy.ShouldShow(
+                indicators.EnableMouseMarker,
+                hasTextCaret: false,
+                cursorReadSucceeded,
+                cursor.IsVisible,
+                cursor.IsSystemIBeam,
+                isOwnProcess,
+                allowed ? markerState : MarkerState.Unknown))
+        {
+            _overlay.HideMarker();
+            return;
+        }
+
+        var cursorRect = new NativeMethods.RECT
+        {
+            Left = cursor.Position.X,
+            Top = cursor.Position.Y,
+            Right = cursor.Position.X + 1,
+            Bottom = cursor.Position.Y + 1
+        };
+        MarkerAppearanceSettings mouseMarker = _settings.Marker with
+        {
+            OffsetX = indicators.MouseOffsetX,
+            OffsetY = indicators.MouseOffsetY
+        };
+        _overlay.Update(markerState, cursorRect, mouseMarker, _settings.MarkerBehavior);
+        DiagnosticsLog.WriteThrottled(
+            $"Mouse marker shown: state={markerState}, focus=0x{focusHwnd.ToInt64():X}, cursor=({cursor.Position.X},{cursor.Position.Y}).",
+            $"mouse-marker:{markerState}:{focusHwnd}");
+    }
+
+    private bool TryResolveForegroundIndicatorContext(
+        out IntPtr focusHwnd,
+        out WindowKey windowKey,
+        out ApplicationRuleMatch rule,
+        out MarkerState markerState)
+    {
+        focusHwnd = IntPtr.Zero;
+        windowKey = default;
+        rule = ApplicationRuleMatch.None;
+        markerState = MarkerState.Unknown;
+
+        IntPtr foreground = NativeMethods.GetForegroundWindow();
+        if (!_windowInfoService.TryGetWindowKey(foreground, out windowKey) ||
+            windowKey.ProcessId == Environment.ProcessId ||
+            !_windowInfoService.IsWindowVisible(windowKey.Hwnd) ||
+            _windowInfoService.IsIconic(windowKey.Hwnd))
+        {
+            return false;
+        }
+
+        uint threadId = NativeMethods.GetWindowThreadProcessId(foreground, out _);
+        if (threadId != 0)
+        {
+            var guiInfo = new NativeMethods.GUITHREADINFO
+            {
+                cbSize = System.Runtime.InteropServices.Marshal.SizeOf<NativeMethods.GUITHREADINFO>()
+            };
+            if (NativeMethods.GetGUIThreadInfo(threadId, ref guiInfo))
+            {
+                focusHwnd = guiInfo.hwndFocus;
+            }
+        }
+
+        focusHwnd = focusHwnd == IntPtr.Zero ? foreground : focusHwnd;
+        WindowContextSnapshot windowContext = _windowContextReader.Read(focusHwnd);
+        rule = GetApplicationRule(windowKey, windowContext);
+        _applicationRuleMatchCache[windowKey] = rule;
+
+        TextInputMode inputMode = _imeDiagnosticService?.ReadDiagnostics(focusHwnd).FinalMode
+                                  ?? _imeService.GetInputMode(focusHwnd);
+        inputMode = _inferredInputModeTracker.Resolve(windowKey, inputMode);
+        if (inputMode == TextInputMode.Unknown)
+        {
+            inputMode = _imeService.GetOpenStatus(focusHwnd) switch
+            {
+                ImeOpenStatus.Open => TextInputMode.Chinese,
+                ImeOpenStatus.Closed => TextInputMode.English,
+                _ => TextInputMode.Unknown
+            };
+        }
+
+        markerState = MarkerStateResolver.Resolve(inputMode, _capsLockService.IsCapsLockOn());
+        return markerState != MarkerState.Unknown;
+    }
+
+    private void UpdateAdditionalIndicators(
+        IntPtr targetWindow,
+        MarkerState markerState,
+        bool allowed)
+    {
+        if (!allowed || markerState == MarkerState.Unknown)
+        {
+            HideAdditionalIndicators();
+            return;
+        }
+
+        AdditionalIndicatorSettings indicators = _settings.AdditionalIndicators;
+        if (indicators.EnableWindowBorder)
+        {
+            _windowBorderOverlay.Update(
+                targetWindow,
+                markerState,
+                IndicatorColorResolver.GetColor(markerState, _settings.Marker),
+                indicators.WindowBorderWidth);
+        }
+        else
+        {
+            _windowBorderOverlay.HideIndicator();
+        }
+
+        if (indicators.ColorizeIBeamCursor)
+        {
+            _systemCursorColorizer.Update(markerState, _settings.Marker);
+        }
+        else
+        {
+            _systemCursorColorizer.Restore();
+        }
+    }
+
+    private void HideAdditionalIndicators()
+    {
+        _windowBorderOverlay.HideIndicator();
+        _systemCursorColorizer.Restore();
     }
 }

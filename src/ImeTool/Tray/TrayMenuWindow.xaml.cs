@@ -199,7 +199,7 @@ public partial class TrayMenuWindow : Window
 
         if (_mouseHook == IntPtr.Zero)
         {
-            DiagnosticsLog.Write($"Tray menu outside-click hook failed: error={Marshal.GetLastWin32Error()}.");
+            DiagnosticsLog.Warn($"Tray menu outside-click hook failed: error={Marshal.GetLastWin32Error()}.");
         }
     }
 

@@ -23,6 +23,9 @@ public static class NativeMethods
 
     public const uint GaRoot = 2;
     public const uint MonitorDefaultToNearest = 2;
+    public const uint CursorShowing = 0x00000001;
+    public const uint OcrIBeam = 32513;
+    public const uint SpiSetCursors = 0x0057;
 
     public const int WhMouseLl = 14;
     public const int WhKeyboardLl = 13;
@@ -117,6 +120,26 @@ public static class NativeMethods
         public uint flags;
         public uint time;
         public UIntPtr dwExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct CURSORINFO
+    {
+        public int cbSize;
+        public uint flags;
+        public IntPtr hCursor;
+        public POINT ptScreenPos;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct ICONINFO
+    {
+        [MarshalAs(UnmanagedType.Bool)]
+        public bool fIcon;
+        public uint xHotspot;
+        public uint yHotspot;
+        public IntPtr hbmMask;
+        public IntPtr hbmColor;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -222,6 +245,13 @@ public static class NativeMethods
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool GetCursorPos(out POINT lpPoint);
 
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool GetCursorInfo(ref CURSORINFO pci);
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+    public static extern IntPtr LoadCursor(IntPtr hInstance, IntPtr lpCursorName);
+
     [DllImport("user32.dll")]
     public static extern IntPtr WindowFromPoint(POINT point);
 
@@ -250,6 +280,33 @@ public static class NativeMethods
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool IsIconic(IntPtr hWnd);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool GetIconInfo(IntPtr hIcon, out ICONINFO piconinfo);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern IntPtr CreateIconIndirect(ref ICONINFO iconInfo);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool DestroyIcon(IntPtr hIcon);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool SetSystemCursor(IntPtr hCursor, uint id);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool SystemParametersInfo(
+        uint uiAction,
+        uint uiParam,
+        IntPtr pvParam,
+        uint fWinIni);
+
+    [DllImport("gdi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool DeleteObject(IntPtr hObject);
 
     [DllImport("user32.dll", SetLastError = true)]
     public static extern IntPtr SetWinEventHook(

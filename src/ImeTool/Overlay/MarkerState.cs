@@ -67,7 +67,7 @@ public sealed class CapsLockService : ICapsLockService, IDisposable
 
         if (_hook == IntPtr.Zero)
         {
-            DiagnosticsLog.Write($"Caps Lock keyboard hook failed: error={Marshal.GetLastWin32Error()}.");
+            DiagnosticsLog.Warn($"Caps Lock keyboard hook failed: error={Marshal.GetLastWin32Error()}.");
         }
     }
 

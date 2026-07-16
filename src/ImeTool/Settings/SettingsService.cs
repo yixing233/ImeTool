@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text.Json;
 using ImeTool.Caret;
+using ImeTool.Diagnostics;
 using ImeTool.Ime;
 
 namespace ImeTool.Settings;
@@ -93,6 +94,23 @@ public sealed record MarkerBehaviorSettings
         DisplayMode = Enum.IsDefined(DisplayMode) ? DisplayMode : MarkerDisplayMode.Always,
         AutoHideDelayMilliseconds = Math.Clamp(AutoHideDelayMilliseconds, 300, 10000),
         FollowAnimationDurationMilliseconds = Math.Clamp(FollowAnimationDurationMilliseconds, 40, 300)
+    };
+}
+
+public sealed record AdditionalIndicatorSettings
+{
+    public bool EnableWindowBorder { get; init; }
+    public int WindowBorderWidth { get; init; } = 3;
+    public bool EnableMouseMarker { get; init; }
+    public int MouseOffsetX { get; init; } = 14;
+    public int MouseOffsetY { get; init; } = 18;
+    public bool ColorizeIBeamCursor { get; init; }
+
+    public AdditionalIndicatorSettings Normalize() => this with
+    {
+        WindowBorderWidth = Math.Clamp(WindowBorderWidth, 1, 12),
+        MouseOffsetX = Math.Clamp(MouseOffsetX, -96, 96),
+        MouseOffsetY = Math.Clamp(MouseOffsetY, -96, 96)
     };
 }
 
@@ -227,17 +245,20 @@ public sealed record MarkerAppearanceSettings
 
 public sealed record AppSettings
 {
-    public int SettingsVersion { get; init; } = 15;
+    public int SettingsVersion { get; init; } = 17;
     public bool Enabled { get; init; } = true;
     public bool StartWithWindows { get; init; } = false;
     public bool SilentStart { get; init; } = true;
     public bool AutoCheckForUpdates { get; init; } = true;
+    public string StorageDirectory { get; init; } = string.Empty;
+    public DiagnosticsLogLevel LogLevel { get; init; } = DiagnosticsLogLevel.Warn;
     public bool EnableWindowMemory { get; init; } = true;
     public bool PersistWindowMemory { get; init; } = false;
     public string WindowMemoryStoragePath { get; init; } = string.Empty;
     public SettingsWindowBackdrop SettingsBackdrop { get; init; } = SettingsWindowBackdrop.Acrylic;
     public MarkerAppearanceSettings Marker { get; init; } = new();
     public MarkerBehaviorSettings MarkerBehavior { get; init; } = new();
+    public AdditionalIndicatorSettings AdditionalIndicators { get; init; } = new();
     public CaretCaptureMode CaretCaptureMode { get; init; } = CaretCaptureMode.Automatic;
     public bool GlobalHotkeysEnabled { get; init; } = true;
     public GlobalHotkeySettings Hotkeys { get; init; } = new();
@@ -253,21 +274,63 @@ public sealed record AppSettings
             hotkeys = hotkeys with { Enabled = GlobalHotkeysEnabled };
         }
 
+        string storageDirectory = ResolveStorageDirectoryForMigration();
         return this with
         {
-            SettingsVersion = 15,
-            WindowMemoryStoragePath = WindowMemoryStoragePath?.Trim() ?? string.Empty,
+            SettingsVersion = 17,
+            StorageDirectory = storageDirectory,
+            LogLevel = DiagnosticsLogLevelPolicy.Normalize(LogLevel),
+            WindowMemoryStoragePath = string.Empty,
             SettingsBackdrop = Enum.IsDefined(SettingsBackdrop)
                 ? SettingsBackdrop
                 : SettingsWindowBackdrop.Acrylic,
             Marker = marker.Normalize(),
             MarkerBehavior = (MarkerBehavior ?? new MarkerBehaviorSettings()).Normalize(),
+            AdditionalIndicators = (AdditionalIndicators ?? new AdditionalIndicatorSettings()).Normalize(),
             CaretCaptureMode = CaretCaptureModePolicy.Normalize(CaretCaptureMode),
             GlobalHotkeysEnabled = hotkeys.Enabled,
             Hotkeys = hotkeys,
             ApplicationRules = ApplicationRuleNormalizer.Normalize(ApplicationRules),
             ImeDetectionRules = ImeDetectionRuleNormalizer.Normalize(ImeDetectionRules)
         };
+    }
+
+    private string ResolveStorageDirectoryForMigration()
+    {
+        if (!string.IsNullOrWhiteSpace(StorageDirectory))
+        {
+            try
+            {
+                return StoragePathService.ResolveDirectory(StorageDirectory);
+            }
+            catch
+            {
+                return StoragePathService.DefaultDirectory;
+            }
+        }
+
+        if (SettingsVersion < 17 && !string.IsNullOrWhiteSpace(WindowMemoryStoragePath))
+        {
+            try
+            {
+                string legacyPath = Path.GetFullPath(
+                    Environment.ExpandEnvironmentVariables(WindowMemoryStoragePath.Trim()));
+                string defaultLegacyPath = Path.GetFullPath(StoragePathService.LegacyWindowMemoryDefaultPath);
+                if (!string.Equals(legacyPath, defaultLegacyPath, StringComparison.OrdinalIgnoreCase))
+                {
+                    string? legacyDirectory = Path.GetDirectoryName(legacyPath);
+                    if (!string.IsNullOrWhiteSpace(legacyDirectory))
+                    {
+                        return StoragePathService.ResolveDirectory(legacyDirectory);
+                    }
+                }
+            }
+            catch
+            {
+            }
+        }
+
+        return StoragePathService.DefaultDirectory;
     }
 }
 
@@ -377,15 +440,18 @@ public sealed class SettingsService
         {
             if (!File.Exists(_settingsPath))
             {
-                return new AppSettings();
+                return new AppSettings().Normalize();
             }
 
             string json = File.ReadAllText(_settingsPath);
-            return (JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? new AppSettings()).Normalize();
+            AppSettings source = JsonSerializer.Deserialize<AppSettings>(json, JsonOptions) ?? new AppSettings();
+            AppSettings normalized = source.Normalize();
+            TryMigrateLegacyWindowMemory(source, normalized);
+            return normalized;
         }
         catch
         {
-            return new AppSettings();
+            return new AppSettings().Normalize();
         }
     }
 
@@ -398,6 +464,41 @@ public sealed class SettingsService
         }
 
         File.WriteAllText(_settingsPath, JsonSerializer.Serialize(settings.Normalize(), JsonOptions));
+    }
+
+    private static void TryMigrateLegacyWindowMemory(AppSettings source, AppSettings normalized)
+    {
+        if (source.SettingsVersion >= 17 || !source.PersistWindowMemory)
+        {
+            return;
+        }
+
+        try
+        {
+            string legacyPath = string.IsNullOrWhiteSpace(source.WindowMemoryStoragePath)
+                ? StoragePathService.LegacyWindowMemoryDefaultPath
+                : Path.GetFullPath(Environment.ExpandEnvironmentVariables(source.WindowMemoryStoragePath.Trim()));
+            string destinationPath = StoragePathService.GetWindowMemoryPath(normalized.StorageDirectory);
+            if (string.Equals(legacyPath, destinationPath, StringComparison.OrdinalIgnoreCase) ||
+                !File.Exists(legacyPath) ||
+                File.Exists(destinationPath))
+            {
+                return;
+            }
+
+            string? destinationDirectory = Path.GetDirectoryName(destinationPath);
+            if (!string.IsNullOrWhiteSpace(destinationDirectory))
+            {
+                Directory.CreateDirectory(destinationDirectory);
+            }
+
+            File.Copy(legacyPath, destinationPath);
+        }
+        catch
+        {
+            // Startup falls back to an empty persisted-memory set if migration
+            // is blocked by the selected storage directory.
+        }
     }
 }
 

@@ -7,6 +7,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using ImeTool.Overlay;
 using ImeTool.Caret;
+using ImeTool.Diagnostics;
 using ImeTool.Hotkeys;
 using ImeTool.Settings;
 using ImeTool.State;
@@ -166,6 +167,7 @@ public partial class SettingsWindow : FluentWindow
         Settings = settings.Normalize();
         InitializeStyleBox();
         InitializeBackdropBox();
+        InitializeLogLevelBox();
         InitializeDisplayModeBox();
         InitializeCaretCaptureModeBox();
         LoadFromSettings(Settings);
@@ -254,6 +256,19 @@ public partial class SettingsWindow : FluentWindow
         Tag = mode
     };
 
+    private void InitializeLogLevelBox()
+    {
+        LogLevelBox.Items.Add(CreateLogLevelItem("Info · 完整信息", DiagnosticsLogLevel.Info));
+        LogLevelBox.Items.Add(CreateLogLevelItem("Warn · 警告及错误（推荐）", DiagnosticsLogLevel.Warn));
+        LogLevelBox.Items.Add(CreateLogLevelItem("Error · 仅错误", DiagnosticsLogLevel.Error));
+    }
+
+    private static ComboBoxItem CreateLogLevelItem(string text, DiagnosticsLogLevel level) => new()
+    {
+        Content = text,
+        Tag = level
+    };
+
     private void InitializeCaretCaptureModeBox()
     {
         CaretCaptureModeBox.Items.Add(CreateCaretCaptureModeItem(
@@ -302,10 +317,10 @@ public partial class SettingsWindow : FluentWindow
         StartupBox.IsChecked = normalized.StartWithWindows;
         SilentStartBox.IsChecked = normalized.SilentStart;
         AutoCheckUpdatesBox.IsChecked = normalized.AutoCheckForUpdates;
+        StorageDirectoryBox.Text = normalized.StorageDirectory;
+        SelectLogLevel(normalized.LogLevel);
         WindowMemoryEnabledBox.IsChecked = normalized.EnableWindowMemory;
         PersistWindowMemoryBox.IsChecked = normalized.PersistWindowMemory;
-        WindowMemoryStoragePathBox.Text = ResolveWindowMemoryStoragePathForDisplay(normalized.WindowMemoryStoragePath);
-        UpdateWindowMemoryPersistenceControls();
         UpdateStatusText.Text = $"当前版本 v{AppVersion.Display} · Windows x64";
         UpdateActionButton.Content = "检查更新";
         _availableUpdate = null;
@@ -338,6 +353,12 @@ public partial class SettingsWindow : FluentWindow
         MotionBox.IsChecked = normalized.MarkerBehavior.EnableMotion;
         FollowAnimationDurationBox.Text = normalized.MarkerBehavior.FollowAnimationDurationMilliseconds.ToString(CultureInfo.InvariantCulture);
         FadeAnimationBox.IsChecked = normalized.MarkerBehavior.EnableFadeAnimation;
+        WindowBorderEnabledBox.IsChecked = normalized.AdditionalIndicators.EnableWindowBorder;
+        WindowBorderWidthBox.Text = normalized.AdditionalIndicators.WindowBorderWidth.ToString(CultureInfo.InvariantCulture);
+        MouseMarkerEnabledBox.IsChecked = normalized.AdditionalIndicators.EnableMouseMarker;
+        MouseOffsetXBox.Text = normalized.AdditionalIndicators.MouseOffsetX.ToString(CultureInfo.InvariantCulture);
+        MouseOffsetYBox.Text = normalized.AdditionalIndicators.MouseOffsetY.ToString(CultureInfo.InvariantCulture);
+        ColorizeIBeamCursorBox.IsChecked = normalized.AdditionalIndicators.ColorizeIBeamCursor;
         GlobalHotkeysBox.IsChecked = normalized.Hotkeys.Enabled;
         LoadHotkeyBindings(normalized.Hotkeys);
         IReadOnlyList<ApplicationRule> processOnlyRules = normalized.ApplicationRules
@@ -387,6 +408,20 @@ public partial class SettingsWindow : FluentWindow
         }
 
         BackdropBox.SelectedIndex = 0;
+    }
+
+    private void SelectLogLevel(DiagnosticsLogLevel level)
+    {
+        foreach (ComboBoxItem item in LogLevelBox.Items)
+        {
+            if (item.Tag is DiagnosticsLogLevel itemLevel && itemLevel == level)
+            {
+                LogLevelBox.SelectedItem = item;
+                return;
+            }
+        }
+
+        LogLevelBox.SelectedIndex = 1;
     }
 
     private void SelectDisplayMode(MarkerDisplayMode mode)
@@ -528,6 +563,7 @@ public partial class SettingsWindow : FluentWindow
         SetSectionVisibility(GeneralSectionTitle, GeneralSectionGroup, pageIndex == 0);
         SetSectionVisibility(MarkerAppearanceSectionTitle, MarkerAppearanceSectionGroup, pageIndex == 1);
         SetSectionVisibility(DisplayBehaviorSectionTitle, DisplayBehaviorSectionGroup, pageIndex == 1);
+        SetSectionVisibility(AdditionalIndicatorsSectionTitle, AdditionalIndicatorsSectionGroup, pageIndex == 1);
         SetSectionVisibility(StateStyleSectionTitle, StateStyleSectionGroup, pageIndex == 1);
         SetSectionVisibility(PreviewSectionTitle, PreviewSectionGroup, pageIndex == 1);
         SetSectionVisibility(WindowMemorySectionTitle, WindowMemorySectionGroup, pageIndex == 2);
@@ -607,27 +643,23 @@ public partial class SettingsWindow : FluentWindow
             return false;
         }
 
-        string windowMemoryStoragePath;
+        string storageDirectory;
         try
         {
-            windowMemoryStoragePath = WindowMemoryPersistenceStore.ResolvePath(WindowMemoryStoragePathBox.Text);
+            storageDirectory = StoragePathService.ResolveDirectory(StorageDirectoryBox.Text);
         }
         catch (Exception exception) when (exception is ArgumentException or NotSupportedException or PathTooLongException)
         {
             settings = Settings;
-            validationError = "窗口记忆存储路径无效";
+            validationError = "数据储存位置无效";
             return false;
         }
 
-        if (PersistWindowMemoryBox.IsChecked == true)
+        if (!StoragePathService.TryProbeWrite(storageDirectory, out string? storageError))
         {
-            var persistenceStore = new WindowMemoryPersistenceStore(windowMemoryStoragePath);
-            if (!persistenceStore.TryProbeWrite(out string? persistenceError))
-            {
-                settings = Settings;
-                validationError = $"窗口记忆存储路径不可写：{persistenceError}";
-                return false;
-            }
+            settings = Settings;
+            validationError = $"数据储存位置不可写：{storageError}";
+            return false;
         }
 
         settings = new AppSettings
@@ -636,12 +668,14 @@ public partial class SettingsWindow : FluentWindow
             StartWithWindows = StartupBox.IsChecked == true,
             SilentStart = SilentStartBox.IsChecked == true,
             AutoCheckForUpdates = AutoCheckUpdatesBox.IsChecked == true,
+            StorageDirectory = storageDirectory,
+            LogLevel = SelectedLogLevel(),
             EnableWindowMemory = WindowMemoryEnabledBox.IsChecked == true,
             PersistWindowMemory = PersistWindowMemoryBox.IsChecked == true,
-            WindowMemoryStoragePath = windowMemoryStoragePath,
             SettingsBackdrop = SelectedBackdrop(),
             Marker = ReadMarkerSettings(),
             MarkerBehavior = ReadMarkerBehaviorSettings(),
+            AdditionalIndicators = ReadAdditionalIndicatorSettings(),
             CaretCaptureMode = SelectedCaretCaptureMode(),
             GlobalHotkeysEnabled = hotkeys.Enabled,
             Hotkeys = hotkeys,
@@ -983,51 +1017,50 @@ public partial class SettingsWindow : FluentWindow
     {
         if (_isInitialized)
         {
-            UpdateWindowMemoryPersistenceControls();
             RefreshWindowMemory();
         }
     }
 
-    private void OnBrowseWindowMemoryStorageClicked(object sender, RoutedEventArgs e)
+    private void OnBrowseStorageDirectoryClicked(object sender, RoutedEventArgs e)
     {
-        string currentPath = ResolveWindowMemoryStoragePathForDisplay(WindowMemoryStoragePathBox.Text);
-        var dialog = new Microsoft.Win32.SaveFileDialog
+        string currentDirectory = ResolveStorageDirectoryForDisplay(StorageDirectoryBox.Text);
+        var dialog = new Microsoft.Win32.OpenFolderDialog
         {
-            Title = "选择窗口记忆存储文件",
-            Filter = "JSON 文件|*.json|所有文件|*.*",
-            AddExtension = true,
-            DefaultExt = ".json",
-            FileName = Path.GetFileName(currentPath),
-            InitialDirectory = Path.GetDirectoryName(currentPath),
-            OverwritePrompt = false
+            Title = "选择 ImeTool 数据储存位置",
+            InitialDirectory = currentDirectory,
+            Multiselect = false
         };
 
         if (dialog.ShowDialog(this) == true)
         {
-            WindowMemoryStoragePathBox.Text = dialog.FileName;
+            StorageDirectoryBox.Text = dialog.FolderName;
         }
     }
 
-    private void OnResetWindowMemoryStorageClicked(object sender, RoutedEventArgs e) =>
-        WindowMemoryStoragePathBox.Text = WindowMemoryPersistenceStore.DefaultPath;
+    private void OnResetStorageDirectoryClicked(object sender, RoutedEventArgs e) =>
+        StorageDirectoryBox.Text = StoragePathService.DefaultDirectory;
 
-    private void UpdateWindowMemoryPersistenceControls()
+    private void OnOpenLogViewerClicked(object sender, RoutedEventArgs e)
     {
-        bool enabled = PersistWindowMemoryBox.IsChecked == true;
-        WindowMemoryStoragePathBox.IsEnabled = enabled;
-        BrowseWindowMemoryStorageButton.IsEnabled = enabled;
-        ResetWindowMemoryStorageButton.IsEnabled = enabled;
+        var window = new LogViewerWindow(
+            StoragePathService.GetLogPath(Settings.StorageDirectory),
+            Settings.LogLevel,
+            SelectedBackdrop())
+        {
+            Owner = this
+        };
+        window.ShowDialog();
     }
 
-    private static string ResolveWindowMemoryStoragePathForDisplay(string? path)
+    private static string ResolveStorageDirectoryForDisplay(string? path)
     {
         try
         {
-            return WindowMemoryPersistenceStore.ResolvePath(path);
+            return StoragePathService.ResolveDirectory(path);
         }
         catch
         {
-            return WindowMemoryPersistenceStore.DefaultPath;
+            return StoragePathService.DefaultDirectory;
         }
     }
 
@@ -1646,6 +1679,16 @@ public partial class SettingsWindow : FluentWindow
         EnableFadeAnimation = FadeAnimationBox.IsChecked == true
     };
 
+    private AdditionalIndicatorSettings ReadAdditionalIndicatorSettings() => new()
+    {
+        EnableWindowBorder = WindowBorderEnabledBox.IsChecked == true,
+        WindowBorderWidth = ParseInt(WindowBorderWidthBox.Text, 3),
+        EnableMouseMarker = MouseMarkerEnabledBox.IsChecked == true,
+        MouseOffsetX = ParseInt(MouseOffsetXBox.Text, 14),
+        MouseOffsetY = ParseInt(MouseOffsetYBox.Text, 18),
+        ColorizeIBeamCursor = ColorizeIBeamCursorBox.IsChecked == true
+    };
+
     private IReadOnlyList<ApplicationRule> ReadApplicationRules()
     {
         var rules = new List<ApplicationRule>(_advancedApplicationRules);
@@ -1703,6 +1746,11 @@ public partial class SettingsWindow : FluentWindow
         BackdropBox.SelectedItem is ComboBoxItem item && item.Tag is SettingsWindowBackdrop backdrop
             ? backdrop
             : SettingsWindowBackdrop.Acrylic;
+
+    private DiagnosticsLogLevel SelectedLogLevel() =>
+        LogLevelBox.SelectedItem is ComboBoxItem item && item.Tag is DiagnosticsLogLevel level
+            ? level
+            : DiagnosticsLogLevel.Warn;
 
     private MarkerDisplayMode SelectedDisplayMode() =>
         DisplayModeBox.SelectedItem is ComboBoxItem item && item.Tag is MarkerDisplayMode mode

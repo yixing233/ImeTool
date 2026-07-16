@@ -70,7 +70,7 @@ public partial class App : System.Windows.Application
             }
             catch (Exception exception)
             {
-                Diagnostics.DiagnosticsLog.Write($"Unable to report update startup health: {exception.Message}");
+                Diagnostics.DiagnosticsLog.Warn($"Unable to report update startup health: {exception.Message}");
             }
         });
     }

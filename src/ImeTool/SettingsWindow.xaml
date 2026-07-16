@@ -299,8 +299,6 @@
                                              Unchecked="OnPreviewSettingChanged" />
                         </Grid>
 
-                        <Border Height="1" Background="{DynamicResource SettingsDividerBrush}" Margin="60,0,0,0" />
-
                         <Grid MinHeight="64" Margin="16,0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="44" />
@@ -314,8 +312,6 @@
                             </StackPanel>
                             <ui:ToggleSwitch x:Name="SilentStartBox" Grid.Column="2" VerticalAlignment="Center" />
                         </Grid>
-
-                        <Border Height="1" Background="{DynamicResource SettingsDividerBrush}" Margin="60,0,0,0" />
 
                         <Grid MinHeight="64" Margin="16,0">
                             <Grid.ColumnDefinitions>
@@ -331,7 +327,88 @@
                             <ui:ToggleSwitch x:Name="StartupBox" Grid.Column="2" VerticalAlignment="Center" />
                         </Grid>
 
-                        <Border Height="1" Background="{DynamicResource SettingsDividerBrush}" Margin="60,0,0,0" />
+                        <Grid MinHeight="82" Margin="16,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="44" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="360" />
+                            </Grid.ColumnDefinitions>
+                            <ui:SymbolIcon Symbol="Storage24" Style="{StaticResource RowIconStyle}" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="8,0,16,0">
+                                <TextBlock Text="数据储存位置" Style="{StaticResource RowTitleStyle}" />
+                                <TextBlock Text="保存日志和窗口记忆，默认跟随软件安装位置；保存设置后生效"
+                                           Style="{StaticResource RowDescriptionStyle}" />
+                            </StackPanel>
+                            <Grid Grid.Column="2" VerticalAlignment="Center">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="8" />
+                                    <ColumnDefinition Width="64" />
+                                    <ColumnDefinition Width="8" />
+                                    <ColumnDefinition Width="64" />
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="StorageDirectoryBox"
+                                         Style="{StaticResource InlineTextBoxStyle}" />
+                                <Button Grid.Column="2"
+                                        Content="选择"
+                                        Style="{StaticResource InlineActionButtonStyle}"
+                                        Click="OnBrowseStorageDirectoryClicked" />
+                                <Button Grid.Column="4"
+                                        Content="默认"
+                                        Style="{StaticResource InlineActionButtonStyle}"
+                                        Click="OnResetStorageDirectoryClicked" />
+                            </Grid>
+                        </Grid>
+
+                        <Grid MinHeight="64" Margin="16,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="44" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="210" />
+                            </Grid.ColumnDefinitions>
+                            <ui:SymbolIcon Symbol="Warning24" Style="{StaticResource RowIconStyle}" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="8,0,16,0">
+                                <TextBlock Text="日志捕获等级" Style="{StaticResource RowTitleStyle}" />
+                                <TextBlock Text="Info 记录完整信息，Warn 和 Error 依次减少；保存设置后生效"
+                                           Style="{StaticResource RowDescriptionStyle}" />
+                            </StackPanel>
+                            <ComboBox x:Name="LogLevelBox" Grid.Column="2" VerticalAlignment="Center" />
+                        </Grid>
+
+                        <Grid MinHeight="64" Margin="16,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="44" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <ui:SymbolIcon Symbol="DocumentText24" Style="{StaticResource RowIconStyle}" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="8,0,16,0">
+                                <TextBlock Text="运行日志" Style="{StaticResource RowTitleStyle}" />
+                                <TextBlock Text="查看、复制或导出当前日志文件" Style="{StaticResource RowDescriptionStyle}" />
+                            </StackPanel>
+                            <Button Grid.Column="2"
+                                    Width="104"
+                                    Content="查看日志"
+                                    Style="{StaticResource InlineActionButtonStyle}"
+                                    Click="OnOpenLogViewerClicked" />
+                        </Grid>
+
+                        <Grid MinHeight="64" Margin="16,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="44" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="210" />
+                            </Grid.ColumnDefinitions>
+                            <ui:SymbolIcon Symbol="LayerDiagonalSparkle24" Style="{StaticResource RowIconStyle}" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="8,0,16,0">
+                                <TextBlock Text="设置窗口材质" Style="{StaticResource RowTitleStyle}" />
+                                <TextBlock Text="选择云母或亚克力系统背景" Style="{StaticResource RowDescriptionStyle}" />
+                            </StackPanel>
+                            <ComboBox x:Name="BackdropBox"
+                                      Grid.Column="2"
+                                      VerticalAlignment="Center"
+                                      SelectionChanged="OnBackdropChanged" />
+                        </Grid>
 
                         <Grid MinHeight="64" Margin="16,0">
                             <Grid.ColumnDefinitions>
@@ -346,8 +423,6 @@
                             </StackPanel>
                             <ui:ToggleSwitch x:Name="AutoCheckUpdatesBox" Grid.Column="2" VerticalAlignment="Center" />
                         </Grid>
-
-                        <Border Height="1" Background="{DynamicResource SettingsDividerBrush}" Margin="60,0,0,0" />
 
                         <Grid MinHeight="64" Margin="16,0">
                             <Grid.ColumnDefinitions>
@@ -403,9 +478,6 @@
                                            Margin="0,3,0,0"
                                            FontSize="11"
                                            Foreground="#686868" />
-                                <Border Height="1"
-                                        Margin="0,10,0,10"
-                                        Background="{DynamicResource SettingsDividerBrush}" />
                                 <ScrollViewer MaxHeight="180"
                                               VerticalScrollBarVisibility="Auto"
                                               HorizontalScrollBarVisibility="Disabled">
@@ -418,24 +490,6 @@
                             </StackPanel>
                         </Border>
 
-                        <Border Height="1" Background="{DynamicResource SettingsDividerBrush}" Margin="60,0,0,0" />
-
-                        <Grid MinHeight="64" Margin="16,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="44" />
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="210" />
-                            </Grid.ColumnDefinitions>
-                            <ui:SymbolIcon Symbol="LayerDiagonalSparkle24" Style="{StaticResource RowIconStyle}" />
-                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="8,0,16,0">
-                                <TextBlock Text="设置窗口材质" Style="{StaticResource RowTitleStyle}" />
-                                <TextBlock Text="选择云母或亚克力系统背景" Style="{StaticResource RowDescriptionStyle}" />
-                            </StackPanel>
-                            <ComboBox x:Name="BackdropBox"
-                                      Grid.Column="2"
-                                      VerticalAlignment="Center"
-                                      SelectionChanged="OnBackdropChanged" />
-                        </Grid>
                     </StackPanel>
                 </Border>
 
@@ -459,8 +513,6 @@
                                       SelectionChanged="OnPreviewSettingChanged" />
                         </Grid>
 
-                        <Border Height="1" Background="{DynamicResource SettingsDividerBrush}" Margin="60,0,0,0" />
-
                         <Grid MinHeight="64" Margin="16,0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="44" />
@@ -477,8 +529,6 @@
                                      VerticalAlignment="Center"
                                      TextChanged="OnPreviewSettingChanged" />
                         </Grid>
-
-                        <Border Height="1" Background="{DynamicResource SettingsDividerBrush}" Margin="60,0,0,0" />
 
                         <Grid MinHeight="64" Margin="16,0">
                             <Grid.ColumnDefinitions>
@@ -524,8 +574,6 @@
                             <ComboBox x:Name="DisplayModeBox" Grid.Column="2" VerticalAlignment="Center" />
                         </Grid>
 
-                        <Border Height="1" Background="{DynamicResource SettingsDividerBrush}" Margin="60,0,0,0" />
-
                         <Grid MinHeight="72" Margin="16,0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="44" />
@@ -541,8 +589,6 @@
                             <ComboBox x:Name="CaretCaptureModeBox" Grid.Column="2" VerticalAlignment="Center" />
                         </Grid>
 
-                        <Border Height="1" Background="{DynamicResource SettingsDividerBrush}" Margin="60,0,0,0" />
-
                         <Grid MinHeight="64" Margin="16,0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="44" />
@@ -556,8 +602,6 @@
                             </StackPanel>
                             <TextBox x:Name="AutoHideDelayBox" Grid.Column="2" VerticalAlignment="Center" />
                         </Grid>
-
-                        <Border Height="1" Background="{DynamicResource SettingsDividerBrush}" Margin="60,0,0,0" />
 
                         <Grid MinHeight="64" Margin="16,0">
                             <Grid.ColumnDefinitions>
@@ -573,8 +617,6 @@
                             <ui:ToggleSwitch x:Name="MotionBox" Grid.Column="2" VerticalAlignment="Center" />
                         </Grid>
 
-                        <Border Height="1" Background="{DynamicResource SettingsDividerBrush}" Margin="60,0,0,0" />
-
                         <Grid MinHeight="64" Margin="16,0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="44" />
@@ -589,8 +631,6 @@
                             <TextBox x:Name="FollowAnimationDurationBox" Grid.Column="2" VerticalAlignment="Center" />
                         </Grid>
 
-                        <Border Height="1" Background="{DynamicResource SettingsDividerBrush}" Margin="60,0,0,0" />
-
                         <Grid MinHeight="64" Margin="16,0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="44" />
@@ -603,6 +643,92 @@
                                 <TextBlock Text="标记出现和消失时使用轻量过渡" Style="{StaticResource RowDescriptionStyle}" />
                             </StackPanel>
                             <ui:ToggleSwitch x:Name="FadeAnimationBox" Grid.Column="2" VerticalAlignment="Center" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <TextBlock x:Name="AdditionalIndicatorsSectionTitle" Text="更多提示方式" Style="{StaticResource SectionTitleStyle}" Visibility="Collapsed" />
+                <Border x:Name="AdditionalIndicatorsSectionGroup" Style="{StaticResource SettingsGroupStyle}" Visibility="Collapsed">
+                    <StackPanel>
+                        <Grid MinHeight="68" Margin="16,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="44" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <ui:SymbolIcon Symbol="BorderOutsideThick24" Style="{StaticResource RowIconStyle}" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="8,0,16,0">
+                                <TextBlock Text="窗口边框提示" Style="{StaticResource RowTitleStyle}" />
+                                <TextBlock Text="在当前窗口边缘显示中、英或大写状态颜色" Style="{StaticResource RowDescriptionStyle}" />
+                            </StackPanel>
+                            <ui:ToggleSwitch x:Name="WindowBorderEnabledBox" Grid.Column="2" VerticalAlignment="Center" />
+                        </Grid>
+
+                        <Grid MinHeight="64" Margin="16,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="44" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="210" />
+                            </Grid.ColumnDefinitions>
+                            <ui:SymbolIcon Symbol="LineThickness20" Style="{StaticResource RowIconStyle}" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="8,0,16,0">
+                                <TextBlock Text="窗口边框宽度" Style="{StaticResource RowTitleStyle}" />
+                                <TextBlock Text="1–12 像素" Style="{StaticResource RowDescriptionStyle}" />
+                            </StackPanel>
+                            <TextBox x:Name="WindowBorderWidthBox" Grid.Column="2" VerticalAlignment="Center" />
+                        </Grid>
+
+                        <Grid MinHeight="68" Margin="16,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="44" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <ui:SymbolIcon Symbol="CursorHover24" Style="{StaticResource RowIconStyle}" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="8,0,16,0">
+                                <TextBlock Text="鼠标旁标记" Style="{StaticResource RowTitleStyle}" />
+                                <TextBlock Text="没有文本光标时，在 IBeam 鼠标指针附近显示当前标记" Style="{StaticResource RowDescriptionStyle}" />
+                            </StackPanel>
+                            <ui:ToggleSwitch x:Name="MouseMarkerEnabledBox" Grid.Column="2" VerticalAlignment="Center" />
+                        </Grid>
+
+                        <Grid MinHeight="64" Margin="16,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="44" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="210" />
+                            </Grid.ColumnDefinitions>
+                            <ui:SymbolIcon Symbol="ArrowMove24" Style="{StaticResource RowIconStyle}" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="8,0,16,0">
+                                <TextBlock Text="鼠标标记偏移" Style="{StaticResource RowTitleStyle}" />
+                                <TextBlock Text="相对鼠标热点的位置，范围 -96–96" Style="{StaticResource RowDescriptionStyle}" />
+                            </StackPanel>
+                            <Grid Grid.Column="2" VerticalAlignment="Center">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="X" VerticalAlignment="Center" Margin="0,0,6,0" Foreground="#686868" />
+                                <TextBox x:Name="MouseOffsetXBox" Grid.Column="1" />
+                                <TextBlock Grid.Column="2" Text="Y" VerticalAlignment="Center" Margin="12,0,6,0" Foreground="#686868" />
+                                <TextBox x:Name="MouseOffsetYBox" Grid.Column="3" />
+                            </Grid>
+                        </Grid>
+
+                        <Grid MinHeight="68" Margin="16,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="44" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <ui:SymbolIcon Symbol="ColorFill24" Style="{StaticResource RowIconStyle}" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="8,0,16,0">
+                                <TextBlock Text="系统文本光标着色" Style="{StaticResource RowTitleStyle}" />
+                                <TextBlock Text="按当前输入状态为系统 IBeam 鼠标指针着色" Style="{StaticResource RowDescriptionStyle}" />
+                            </StackPanel>
+                            <ui:ToggleSwitch x:Name="ColorizeIBeamCursorBox" Grid.Column="2" VerticalAlignment="Center" />
                         </Grid>
                     </StackPanel>
                 </Border>
@@ -629,8 +755,6 @@
                                              Unchecked="OnWindowMemoryGlobalChanged" />
                         </Grid>
 
-                        <Border Height="1" Background="{DynamicResource SettingsDividerBrush}" Margin="60,0,0,0" />
-
                         <Grid MinHeight="68" Margin="16,0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="44" />
@@ -640,7 +764,7 @@
                             <ui:SymbolIcon Symbol="Save28" Style="{StaticResource RowIconStyle}" />
                             <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="8,0,16,0">
                                 <TextBlock Text="持久化窗口记忆" Style="{StaticResource RowTitleStyle}" />
-                                <TextBlock Text="将窗口状态写入 JSON 文件，软件重启后继续恢复"
+                                <TextBlock Text="写入常规页面设定的数据储存位置，软件重启后继续恢复"
                                            Style="{StaticResource RowDescriptionStyle}" />
                             </StackPanel>
                             <ui:ToggleSwitch x:Name="PersistWindowMemoryBox"
@@ -650,42 +774,6 @@
                                              Unchecked="OnWindowMemoryPersistenceChanged" />
                         </Grid>
 
-                        <Border Height="1" Background="{DynamicResource SettingsDividerBrush}" Margin="60,0,0,0" />
-
-                        <Grid MinHeight="78" Margin="16,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="44" />
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="360" />
-                            </Grid.ColumnDefinitions>
-                            <ui:SymbolIcon Symbol="ArrowDownload24" Style="{StaticResource RowIconStyle}" />
-                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="8,0,16,0">
-                                <TextBlock Text="存储文件" Style="{StaticResource RowTitleStyle}" />
-                                <TextBlock Text="可选择任意可写入位置，默认保存在 AppData"
-                                           Style="{StaticResource RowDescriptionStyle}" />
-                            </StackPanel>
-                            <Grid Grid.Column="2" VerticalAlignment="Center">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="8" />
-                                    <ColumnDefinition Width="64" />
-                                    <ColumnDefinition Width="8" />
-                                    <ColumnDefinition Width="64" />
-                                </Grid.ColumnDefinitions>
-                                <TextBox x:Name="WindowMemoryStoragePathBox"
-                                         Style="{StaticResource InlineTextBoxStyle}" />
-                                <Button x:Name="BrowseWindowMemoryStorageButton"
-                                        Grid.Column="2"
-                                        Content="选择"
-                                        Style="{StaticResource InlineActionButtonStyle}"
-                                        Click="OnBrowseWindowMemoryStorageClicked" />
-                                <Button x:Name="ResetWindowMemoryStorageButton"
-                                        Grid.Column="4"
-                                        Content="默认"
-                                        Style="{StaticResource InlineActionButtonStyle}"
-                                        Click="OnResetWindowMemoryStorageClicked" />
-                            </Grid>
-                        </Grid>
                     </StackPanel>
                 </Border>
 
@@ -707,8 +795,6 @@
                                     Content="刷新"
                                     Click="OnRefreshWindowMemoryClicked" />
                         </Grid>
-
-                        <Border Height="1" Background="{DynamicResource SettingsDividerBrush}" />
 
                         <Grid x:Name="WindowMemoryListHost">
                             <ItemsControl x:Name="WindowMemoryItemsControl">
@@ -783,8 +869,6 @@
                             <ui:ToggleSwitch x:Name="GlobalHotkeysBox" Grid.Column="2" VerticalAlignment="Center" />
                         </Grid>
 
-                        <Border Height="1" Background="{DynamicResource SettingsDividerBrush}" Margin="60,0,0,0" />
-
                         <Grid MinHeight="64" Margin="16,0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="44" />
@@ -810,8 +894,6 @@
                                 <Button Grid.Column="4" Content="清除" Style="{StaticResource InlineActionButtonStyle}" Tag="ToggleEnabled" Click="OnClearHotkeyClicked" />
                             </Grid>
                         </Grid>
-
-                        <Border Height="1" Background="{DynamicResource SettingsDividerBrush}" Margin="60,0,0,0" />
 
                         <Grid MinHeight="64" Margin="16,0">
                             <Grid.ColumnDefinitions>
@@ -839,8 +921,6 @@
                             </Grid>
                         </Grid>
 
-                        <Border Height="1" Background="{DynamicResource SettingsDividerBrush}" Margin="60,0,0,0" />
-
                         <Grid MinHeight="64" Margin="16,0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="44" />
@@ -867,8 +947,6 @@
                             </Grid>
                         </Grid>
 
-                        <Border Height="1" Background="{DynamicResource SettingsDividerBrush}" Margin="60,0,0,0" />
-
                         <Grid MinHeight="64" Margin="16,0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="44" />
@@ -894,8 +972,6 @@
                                 <Button Grid.Column="4" Content="清除" Style="{StaticResource InlineActionButtonStyle}" Tag="ClearCurrentWindowState" Click="OnClearHotkeyClicked" />
                             </Grid>
                         </Grid>
-
-                        <Border Height="1" Background="{DynamicResource SettingsDividerBrush}" Margin="60,0,0,0" />
 
                         <Grid MinHeight="56" Margin="16,0">
                             <TextBlock Text="单击“录制”后按下新的组合键；Delete 或 Backspace 可移除绑定。"
@@ -942,8 +1018,6 @@
                             </StackPanel>
                         </Grid>
 
-                        <Border Height="1" Background="{DynamicResource SettingsDividerBrush}" Margin="60,0,0,0" />
-
                         <Grid MinHeight="64" Margin="16,0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="44" />
@@ -976,8 +1050,6 @@
                             </Grid>
                         </Grid>
 
-                        <Border Height="1" Background="{DynamicResource SettingsDividerBrush}" Margin="60,0,0,0" />
-
                         <Grid MinHeight="64" Margin="16,0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="44" />
@@ -991,8 +1063,6 @@
                             </StackPanel>
                             <TextBox x:Name="StateTextBox" Grid.Column="2" VerticalAlignment="Center" TextChanged="OnStateEditorChanged" />
                         </Grid>
-
-                        <Border Height="1" Background="{DynamicResource SettingsDividerBrush}" Margin="60,0,0,0" />
 
                         <Grid MinHeight="64" Margin="16,0">
                             <Grid.ColumnDefinitions>
@@ -1081,8 +1151,6 @@
                                        Text="窗口类：— · 控件类：—"
                                        TextWrapping="Wrap" />
                         </Grid>
-
-                        <Border Height="1" Background="{DynamicResource SettingsDividerBrush}" />
 
                         <Grid Margin="18,14,18,16">
                             <Grid.RowDefinitions>
@@ -1219,8 +1287,6 @@
                             </Grid>
                         </Grid>
 
-                        <Border Height="1" Background="{DynamicResource SettingsDividerBrush}" Margin="60,0,0,0" />
-
                         <Grid Margin="16,10,16,14">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
@@ -1302,8 +1368,6 @@
                             </Grid>
                         </Grid>
 
-                        <Border Height="1" Background="{DynamicResource SettingsDividerBrush}" Margin="60,0,0,0" />
-
                         <Grid MinHeight="142" Margin="16,8,16,12">
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
@@ -1329,8 +1393,6 @@
                                      TextWrapping="NoWrap"
                                      ToolTip="例如：game、mstsc.exe" />
                         </Grid>
-
-                        <Border Height="1" Background="{DynamicResource SettingsDividerBrush}" Margin="60,0,0,0" />
 
                         <Grid MinHeight="142" Margin="16,8,16,12">
                             <Grid.RowDefinitions>

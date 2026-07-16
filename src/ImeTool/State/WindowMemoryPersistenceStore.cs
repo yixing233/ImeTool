@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text.Json;
 using ImeTool.Diagnostics;
+using ImeTool.Settings;
 
 namespace ImeTool.State;
 
@@ -27,10 +28,8 @@ public sealed class WindowMemoryPersistenceStore : IWindowMemoryPersistenceStore
         StoragePath = ResolvePath(storagePath);
     }
 
-    public static string DefaultPath => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "ImeTool",
-        "window-memory.json");
+    public static string DefaultPath => StoragePathService.GetWindowMemoryPath(
+        StoragePathService.DefaultDirectory);
 
     public string StoragePath { get; }
 
@@ -60,7 +59,7 @@ public sealed class WindowMemoryPersistenceStore : IWindowMemoryPersistenceStore
         }
         catch (Exception exception)
         {
-            DiagnosticsLog.Write($"Window memory persistence load failed: path={StoragePath}, error={exception.Message}");
+            DiagnosticsLog.Error($"Window memory persistence load failed: path={StoragePath}, error={exception.Message}");
             return [];
         }
     }
@@ -100,7 +99,7 @@ public sealed class WindowMemoryPersistenceStore : IWindowMemoryPersistenceStore
         catch (Exception exception)
         {
             error = exception.Message;
-            DiagnosticsLog.Write($"Window memory persistence save failed: path={StoragePath}, error={exception.Message}");
+            DiagnosticsLog.Error($"Window memory persistence save failed: path={StoragePath}, error={exception.Message}");
             return false;
         }
         finally

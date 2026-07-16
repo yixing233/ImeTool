@@ -28,7 +28,7 @@ public static class InputModeToggleSender
             Marshal.SizeOf<NativeMethods.INPUT>());
         if (sent != inputs.Length)
         {
-            DiagnosticsLog.Write($"Synthetic Shift input-mode fallback failed: sent={sent}, error={Marshal.GetLastWin32Error()}.");
+            DiagnosticsLog.Warn($"Synthetic Shift input-mode fallback failed: sent={sent}, error={Marshal.GetLastWin32Error()}.");
             return false;
         }
 

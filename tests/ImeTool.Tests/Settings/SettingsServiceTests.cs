@@ -1,4 +1,5 @@
 using ImeTool.Caret;
+using ImeTool.Diagnostics;
 using ImeTool.Ime;
 using ImeTool.Settings;
 
@@ -21,6 +22,8 @@ public sealed class SettingsServiceTests
         Assert.True(settings.EnableWindowMemory);
         Assert.False(settings.PersistWindowMemory);
         Assert.Equal(string.Empty, settings.WindowMemoryStoragePath);
+        Assert.Equal(StoragePathService.DefaultDirectory, settings.StorageDirectory, ignoreCase: true);
+        Assert.Equal(DiagnosticsLogLevel.Warn, settings.LogLevel);
         Assert.Equal(SettingsWindowBackdrop.Acrylic, settings.SettingsBackdrop);
         Assert.Equal(MarkerDisplayMode.Always, settings.MarkerBehavior.DisplayMode);
         Assert.Equal(CaretCaptureMode.Automatic, settings.CaretCaptureMode);
@@ -166,7 +169,7 @@ public sealed class SettingsServiceTests
         ImeDetectionRule detectionRule = Assert.Single(actual.ImeDetectionRules);
         Assert.Equal("0x0000000008040804", detectionRule.KeyboardLayout);
         Assert.Equal(TextInputMode.Chinese, detectionRule.Result);
-        Assert.Equal(15, actual.SettingsVersion);
+        Assert.Equal(17, actual.SettingsVersion);
     }
 
     [Fact]
@@ -300,12 +303,12 @@ public sealed class SettingsServiceTests
         AppSettings actual = service.Load();
 
         Assert.True(actual.AutoCheckForUpdates);
-        Assert.Equal(15, actual.SettingsVersion);
+        Assert.Equal(17, actual.SettingsVersion);
 
     }
 
     [Fact]
-    public void Save_Then_Load_RoundTrips_Window_Memory_Setting()
+    public void Save_Then_Load_RoundTrips_Storage_And_Window_Memory_Setting()
     {
         string directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
         string path = Path.Combine(directory, "settings.json");
@@ -315,13 +318,62 @@ public sealed class SettingsServiceTests
         {
             EnableWindowMemory = false,
             PersistWindowMemory = true,
-            WindowMemoryStoragePath = "D:\\ImeToolData\\memory.json"
+            StorageDirectory = "D:\\ImeToolData",
+            LogLevel = DiagnosticsLogLevel.Info
         });
         AppSettings actual = service.Load();
 
         Assert.False(actual.EnableWindowMemory);
         Assert.True(actual.PersistWindowMemory);
-        Assert.Equal("D:\\ImeToolData\\memory.json", actual.WindowMemoryStoragePath);
+        Assert.Equal(Path.GetFullPath("D:\\ImeToolData"), actual.StorageDirectory, ignoreCase: true);
+        Assert.Equal(DiagnosticsLogLevel.Info, actual.LogLevel);
+        Assert.Equal(string.Empty, actual.WindowMemoryStoragePath);
+    }
+
+    [Fact]
+    public void Version_Sixteen_Custom_Window_Memory_Path_Migrates_To_Storage_Directory()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "settings.json");
+        string legacyDirectory = Path.Combine(directory, "legacy-data");
+        string legacyMemoryPath = Path.Combine(legacyDirectory, "custom-memory.json");
+        File.WriteAllText(path, $$"""
+            {
+              "SettingsVersion": 16,
+              "WindowMemoryStoragePath": "{{legacyMemoryPath.Replace("\\", "\\\\")}}"
+            }
+            """);
+
+        AppSettings actual = new SettingsService(path).Load();
+
+        Assert.Equal(17, actual.SettingsVersion);
+        Assert.Equal(Path.GetFullPath(legacyDirectory), actual.StorageDirectory, ignoreCase: true);
+        Assert.Equal(string.Empty, actual.WindowMemoryStoragePath);
+    }
+
+    [Fact]
+    public void Version_Sixteen_Persisted_Window_Memory_File_Is_Copied_To_Unified_Name()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        string legacyDirectory = Path.Combine(directory, "legacy-data");
+        Directory.CreateDirectory(legacyDirectory);
+        string legacyMemoryPath = Path.Combine(legacyDirectory, "custom-memory.json");
+        File.WriteAllText(legacyMemoryPath, "{\"Version\":1,\"Entries\":[]}");
+        string settingsPath = Path.Combine(directory, "settings.json");
+        File.WriteAllText(settingsPath, $$"""
+            {
+              "SettingsVersion": 16,
+              "PersistWindowMemory": true,
+              "WindowMemoryStoragePath": "{{legacyMemoryPath.Replace("\\", "\\\\")}}"
+            }
+            """);
+
+        AppSettings actual = new SettingsService(settingsPath).Load();
+        string unifiedPath = StoragePathService.GetWindowMemoryPath(actual.StorageDirectory);
+
+        Assert.True(File.Exists(unifiedPath));
+        Assert.Equal(File.ReadAllText(legacyMemoryPath), File.ReadAllText(unifiedPath));
     }
 
     [Fact]

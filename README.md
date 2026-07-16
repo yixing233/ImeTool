@@ -12,17 +12,19 @@ Windows 输入法状态提示工具，在文本光标旁显示中文、英文及
 - 按顶层窗口独立记忆并恢复中英文输入状态
 - 自动恢复会读回验证实际中英模式，并为现代 TSF 输入法提供 Shift 兼容回退
 - 提供窗口记忆总开关、运行期窗口列表和单窗口独立开关
-- 窗口记忆可选 JSON 持久化，并支持自定义存储路径
+- 窗口记忆可选 JSON 持久化，并与运行日志共用可配置的数据储存位置
 - 支持小圆点、文字胶囊和自定义图片标记
 - 可分别配置中文、英文和大写状态的颜色、文字与图片
 - 支持始终显示、切换时显示、输入时显示等显示策略
 - 支持标记跟随动画、淡入淡出、位置偏移和尺寸调整
+- 支持窗口边框、鼠标旁标记和系统 IBeam 指针着色三种扩展提示方式
 - 支持自动、Win32 Caret、UI Automation、MSAA、浏览器兼容与 JetBrains/JAB 六种光标捕获模式
 - 提供输入法诊断页，可查看 HKL、Open Status、Conversion Mode，并捕获自定义状态码识别规则
 - 支持按进程、标题、窗口类和控件类设置高级应用规则，可独立隐藏标记、禁用记忆、禁止恢复或追加位置偏移
 - 可检测当前已打开的窗口并直接预填应用规则
 - 支持自定义全局快捷键
 - 提供系统托盘菜单、开机启动和静默启动
+- 支持 Info、Warn、Error 分级日志，并可在应用内查看、复制和导出
 - 通过 GitHub Releases 自动检查、下载并安装新版本
 - 设置窗口支持 Acrylic 和 Mica 系统材质
 
@@ -30,7 +32,8 @@ Windows 输入法状态提示工具，在文本光标旁显示中文、英文及
 
 - Windows 10 / Windows 11
 - x64 系统
-- 安装程序会在需要时自动下载并安装 .NET 9 Desktop Runtime x64；此时系统可能显示 UAC 并要求管理员权限
+- 安装程序会在复制程序文件前检查 .NET 9 Desktop Runtime x64、Core Runtime 和 hostfxr 的完整性；缺失时自动下载、安装并再次验证，验证失败会终止安装
+- 安装 .NET Desktop Runtime 时系统可能显示 UAC 并要求管理员权限；若运行库要求重启，安装程序会先提示重启而不会立即启动 ImeTool
 - 从源码构建需要 [.NET 9 SDK](https://dotnet.microsoft.com/download/dotnet/9.0)
 
 ## 下载版本
@@ -39,7 +42,7 @@ Windows 输入法状态提示工具，在文本光标旁显示中文、英文及
 | --- | ---: | --- |
 | [`ImeTool_Windows_x64.exe`](https://github.com/yixing233/ImeTool/releases/latest/download/ImeTool_Windows_x64.exe) | 约 7.2 MB | Windows 10/11 x64 |
 
-ImeTool 本体默认按当前用户安装到 `%LocalAppData%\Programs\ImeTool`，不需要管理员权限，并提供开始菜单快捷方式和标准卸载入口。若系统缺少 .NET 9 Desktop Runtime，安装该系统运行库时可能需要管理员权限。用户设置仍保存在 `%AppData%\ImeTool`，覆盖安装或升级不会删除设置。
+ImeTool 本体默认按当前用户安装到 `%LocalAppData%\Programs\ImeTool`，不需要管理员权限，并提供开始菜单快捷方式和标准卸载入口。若系统缺少 .NET 9 Desktop Runtime，安装该系统运行库时可能需要管理员权限。启动设置仍保存在 `%AppData%\ImeTool`；日志与持久化窗口记忆默认保存在安装目录，也可在常规页面修改，覆盖安装或升级不会删除设置。
 
 > 从 v1.0.5 或更早的 ZIP 版本迁移时，需要手动运行一次安装程序。安装完成后的版本将使用安装包自动更新。
 
@@ -82,7 +85,7 @@ dotnet publish src\ImeTool\ImeTool.csproj `
   -o artifacts\installer-publish
 
 .\installer\build-installer.ps1 `
-  -Version 1.0.23 `
+  -Version 1.0.24 `
   -PublishDir artifacts\installer-publish `
   -OutputDir artifacts\installer
 ```
@@ -137,3 +140,7 @@ ImeTool
 ├─ installer            Inno Setup 安装与构建脚本
 └─ ImeTool.sln          Visual Studio 解决方案
 ```
+
+## 开源协议
+
+本项目基于 [MIT License](LICENSE) 开源。你可以自由使用、复制、修改、合并、发布和分发本项目，但须在软件副本或主要部分中保留原始版权声明和许可声明。

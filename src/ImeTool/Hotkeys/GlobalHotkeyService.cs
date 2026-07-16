@@ -72,7 +72,7 @@ public sealed class GlobalHotkeyService : IDisposable
             }
             else
             {
-                DiagnosticsLog.Write(
+                DiagnosticsLog.Warn(
                     $"Global hotkey registration failed: command={command}, gesture={HotkeyGestureFormatter.Format(gesture)}, error={Marshal.GetLastWin32Error()}.");
             }
         }
