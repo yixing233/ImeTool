@@ -256,36 +256,16 @@ public sealed class AppController : IDisposable
         ImeOpenStatus status = _focusTracker.UpdateCurrentImeState(caret.FocusHwnd);
         if (status == ImeOpenStatus.Unknown)
         {
-            if (hasWindowKey && _stateStore.TryGet(key, out bool savedIsOpen))
-            {
-                status = ImeOpenStatusExtensions.FromBool(savedIsOpen);
-                DiagnosticsLog.WriteThrottled($"IME status unknown; using saved state {status} for {key}.");
-            }
-            else
-            {
-                status = ImeOpenStatus.Closed;
-                DiagnosticsLog.WriteThrottled($"IME status unknown for hwnd 0x{caret.FocusHwnd.ToInt64():X}; showing English marker fallback.");
-            }
+            DiagnosticsLog.WriteThrottled(
+                $"IME live status unknown for hwnd 0x{caret.FocusHwnd.ToInt64():X}; window memory is not used for marker display.");
         }
 
         TextInputMode reportedInputMode = _imeService.GetInputMode(caret.FocusHwnd);
         TextInputMode inputMode = reportedInputMode;
         if (hasWindowKey)
         {
-            bool hasRememberedMode = _stateStore.TryGet(key, out bool rememberedChinese);
-            TextInputMode inferenceInput = reportedInputMode;
-            if (inferenceInput == TextInputMode.Unknown)
-            {
-                inferenceInput = hasRememberedMode
-                    ? (rememberedChinese ? TextInputMode.Chinese : TextInputMode.English)
-                    : status == ImeOpenStatus.Closed
-                        ? TextInputMode.English
-                        : TextInputMode.Chinese;
-            }
-
-            inputMode = _inferredInputModeTracker.Resolve(key, inferenceInput);
+            inputMode = _inferredInputModeTracker.Resolve(key, reportedInputMode);
             bool canRememberInputMode = reportedInputMode != TextInputMode.Unknown ||
-                                        hasRememberedMode ||
                                         _inferredInputModeTracker.HasEffectiveOverride(key);
             if (canRememberInputMode)
             {
@@ -308,7 +288,12 @@ public sealed class AppController : IDisposable
 
         if (inputMode == TextInputMode.Unknown)
         {
-            inputMode = status == ImeOpenStatus.Open ? TextInputMode.Chinese : TextInputMode.English;
+            inputMode = status switch
+            {
+                ImeOpenStatus.Open => TextInputMode.Chinese,
+                ImeOpenStatus.Closed => TextInputMode.English,
+                _ => TextInputMode.Unknown
+            };
         }
 
         MarkerState markerState = MarkerStateResolver.Resolve(inputMode, _capsLockService.IsCapsLockOn());
@@ -532,10 +517,14 @@ public sealed class AppController : IDisposable
                 return;
             }
 
-            TextInputMode mode = _inferredInputModeTracker.Toggle(activeWindow);
+            TextInputMode reportedMode = _imeService.GetInputMode(_activeFocusHwnd);
+            TextInputMode mode = _inferredInputModeTracker.ObserveToggle(
+                activeWindow,
+                reportedMode);
             if (mode != TextInputMode.Unknown)
             {
-                DiagnosticsLog.Write($"Input mode inferred from standalone Shift: window={activeWindow}, mode={mode}.");
+                DiagnosticsLog.Write(
+                    $"Input mode toggle observed: window={activeWindow}, reported={reportedMode}, effective={mode}.");
                 OnTimerTick(this, EventArgs.Empty);
             }
         });

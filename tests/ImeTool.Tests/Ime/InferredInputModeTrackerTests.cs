@@ -56,4 +56,30 @@ public sealed class InferredInputModeTrackerTests
         Assert.Equal(TextInputMode.Chinese, tracker.Resolve(window, TextInputMode.English));
         Assert.True(tracker.HasEffectiveOverride(window));
     }
+
+    [Fact]
+    public void Toggle_Observation_Uses_An_Already_Changed_Reported_Mode()
+    {
+        var tracker = new InferredInputModeTracker();
+        var window = new WindowKey(new IntPtr(1), 10);
+        tracker.Resolve(window, TextInputMode.English);
+
+        Assert.Equal(
+            TextInputMode.Chinese,
+            tracker.ObserveToggle(window, TextInputMode.Chinese));
+        Assert.False(tracker.HasEffectiveOverride(window));
+    }
+
+    [Fact]
+    public void Toggle_Observation_Inverts_When_Reported_Mode_Is_Still_Stale()
+    {
+        var tracker = new InferredInputModeTracker();
+        var window = new WindowKey(new IntPtr(1), 10);
+        tracker.Resolve(window, TextInputMode.English);
+
+        Assert.Equal(
+            TextInputMode.Chinese,
+            tracker.ObserveToggle(window, TextInputMode.English));
+        Assert.True(tracker.HasEffectiveOverride(window));
+    }
 }

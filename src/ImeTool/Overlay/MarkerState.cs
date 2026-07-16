@@ -56,6 +56,7 @@ public sealed class CapsLockService : ICapsLockService, IDisposable
     private bool _capsKeyDown;
     private bool _disposed;
     private readonly StandaloneShiftDetector _shiftDetector = new();
+    private readonly ControlSpaceDetector _controlSpaceDetector = new();
 
     public CapsLockService()
     {
@@ -106,11 +107,23 @@ public sealed class CapsLockService : ICapsLockService, IDisposable
                 }
             }
 
-            if ((isKeyDown || isKeyUp) &&
-                _shiftDetector.Process(key.vkCode, isKeyDown, Environment.TickCount64))
+            if (isKeyDown || isKeyUp)
             {
-                DiagnosticsLog.Write("Standalone Shift input-mode toggle detected.");
-                InputModeToggleRequested?.Invoke(this, EventArgs.Empty);
+                bool shiftToggle = _shiftDetector.Process(
+                    key.vkCode,
+                    isKeyDown,
+                    Environment.TickCount64);
+                bool controlSpaceToggle = _controlSpaceDetector.Process(
+                    key.vkCode,
+                    isKeyDown);
+                if (shiftToggle || controlSpaceToggle)
+                {
+                    DiagnosticsLog.Write(
+                        shiftToggle
+                            ? "Standalone Shift input-mode toggle detected."
+                            : "Control+Space input-mode toggle detected.");
+                    InputModeToggleRequested?.Invoke(this, EventArgs.Empty);
+                }
             }
         }
 

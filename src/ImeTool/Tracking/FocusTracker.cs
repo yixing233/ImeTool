@@ -206,6 +206,14 @@ public sealed class FocusTracker
             return;
         }
 
+        // A single top-level activation can emit many transient focus events
+        // before a real text input target is available. Reapplying the saved
+        // mode for every one of them can overwrite a user's manual switch.
+        if (!canConfirmInputMode && _restoreAttemptCount > 0)
+        {
+            return;
+        }
+
         DateTimeOffset now = _nowProvider();
         if (focusedHwnd == _lastRestoreAttemptHwnd && now < _nextRestoreAttemptAt)
         {

@@ -41,6 +41,31 @@ public sealed class InferredInputModeTracker
         return toggled;
     }
 
+    public TextInputMode ObserveToggle(WindowKey key, TextInputMode reportedMode)
+    {
+        if (!_entries.TryGetValue(key, out Entry entry))
+        {
+            if (reportedMode == TextInputMode.Unknown)
+            {
+                return TextInputMode.Unknown;
+            }
+
+            _entries[key] = new Entry(reportedMode, reportedMode, HasEffectiveOverride: false);
+            return reportedMode;
+        }
+
+        // The platform API may already expose the new mode by the time the
+        // keyboard-hook notification reaches the dispatcher. In that case,
+        // accept the live report instead of inverting it a second time.
+        if (reportedMode != TextInputMode.Unknown && reportedMode != entry.ReportedMode)
+        {
+            _entries[key] = new Entry(reportedMode, reportedMode, HasEffectiveOverride: false);
+            return reportedMode;
+        }
+
+        return Toggle(key);
+    }
+
     public void SetEffectiveMode(WindowKey key, TextInputMode mode)
     {
         if (mode == TextInputMode.Unknown)

@@ -51,7 +51,7 @@ public sealed class FocusTrackerTests
     }
 
     [Fact]
-    public void Same_Window_Focus_Change_Retargets_Pending_Restore_To_Child()
+    public void Same_Window_Unvalidated_Focus_Changes_Do_Not_Reapply_Pending_Restore()
     {
         var ime = new FakeImeService();
         var windows = new FakeWindowInfoService();
@@ -67,7 +67,7 @@ public sealed class FocusTrackerTests
         tracker.HandleFocusChanged(focusA1);
         tracker.HandleFocusChanged(focusA2);
 
-        Assert.Equal([(focusA1, true), (focusA2, true)], ime.SetCalls);
+        Assert.Equal([(focusA1, true)], ime.SetCalls);
     }
 
     [Fact]
@@ -89,7 +89,7 @@ public sealed class FocusTrackerTests
     }
 
     [Fact]
-    public void Failed_Root_Window_Restore_Retries_On_Text_Focus_Child()
+    public void Failed_Root_Window_Restore_Retries_On_Validated_Text_Focus_Child()
     {
         var ime = new FakeImeService();
         var windows = new FakeWindowInfoService();
@@ -105,7 +105,7 @@ public sealed class FocusTrackerTests
         ime.SetResultsByHwnd[child] = true;
 
         tracker.HandleFocusChanged(root);
-        tracker.HandleFocusChanged(child);
+        tracker.UpdateCurrentImeState(child);
 
         Assert.Equal([(root, true), (child, true)], ime.SetCalls);
     }
@@ -223,13 +223,13 @@ public sealed class FocusTrackerTests
         ime.SetResultsByHwnd[child] = true;
         tracker.UpdateCurrentImeState(child);
 
-        Assert.Equal([(root, true), (child, true), (child, true)], ime.SetCalls);
+        Assert.Equal([(root, true), (child, true)], ime.SetCalls);
     }
 
     [Fact]
-    public void Restore_Gives_Up_After_Three_Attempts_Without_Overwriting_Saved_State()
+    public void Restore_Gives_Up_After_Max_Attempts_Without_Overwriting_Saved_State()
     {
-        var ime = new FakeImeService();
+        var ime = new FakeImeService { KeepInputModeAfterToggle = true };
         var windows = new FakeWindowInfoService();
         var store = new WindowStateStore();
         DateTimeOffset now = new(2026, 7, 15, 10, 0, 0, TimeSpan.Zero);
@@ -241,6 +241,7 @@ public sealed class FocusTrackerTests
         windows.Map(child, key);
         store.Save(key, true);
         ime.StatusByHwnd[child] = ImeOpenStatus.Closed;
+        ime.ModeByHwnd[child] = TextInputMode.English;
         ime.SetResultsByHwnd[root] = false;
         ime.SetResultsByHwnd[child] = false;
 
@@ -248,8 +249,14 @@ public sealed class FocusTrackerTests
         tracker.HandleFocusChanged(child);
         now = now.AddMilliseconds(250);
         tracker.UpdateCurrentImeState(child);
+        for (int attempt = 0; attempt < 3; attempt++)
+        {
+            now = now.AddMilliseconds(200);
+            tracker.UpdateCurrentImeState(child);
+        }
 
-        Assert.Equal(3, ime.SetCalls.Count);
+        Assert.Equal(2, ime.SetCalls.Count);
+        Assert.Single(ime.ToggleCalls);
         Assert.True(store.TryGet(key, out bool savedState));
         Assert.True(savedState);
     }
