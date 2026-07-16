@@ -2,6 +2,21 @@
 
 本文件记录 ImeTool 各版本面向用户的主要变化。
 
+## [1.0.23] - 2026-07-16
+
+### 新增
+
+- 光标捕获模式扩展为自动、Win32 Caret、UI Automation、MSAA、浏览器兼容和 JetBrains/JAB 六种。
+- 新增 MSAA `OBJID_CARET` 捕获器，为 Firefox 和部分传统无障碍控件提供光标位置回退。
+- 新增浏览器环境识别：Chromium 优先 UI Automation，Firefox 优先 MSAA，并以经过验证的 Win32 Caret 兜底。
+- 新增 Java Access Bridge 动态加载，可从 Java、JetBrains 安装目录或目标应用自带 JBR 中查找运行库。
+
+### 优化
+
+- 自动模式会识别标准窗口、Chromium、Firefox 和 Java/JetBrains 环境，按对应捕获链选择结果。
+- MSAA 使用独立后台读取线程，避免跨进程无障碍调用阻塞设置窗口和标记刷新。
+- 缓存当前前台窗口类型，减少 50ms 轮询期间重复读取进程信息。
+
 ## [1.0.22] - 2026-07-16
 
 ### 新增

@@ -17,7 +17,7 @@ Windows 输入法状态提示工具，在文本光标旁显示中文、英文及
 - 可分别配置中文、英文和大写状态的颜色、文字与图片
 - 支持始终显示、切换时显示、输入时显示等显示策略
 - 支持标记跟随动画、淡入淡出、位置偏移和尺寸调整
-- 支持自动、Win32 原生与 UI Automation 三种光标捕获模式
+- 支持自动、Win32 Caret、UI Automation、MSAA、浏览器兼容与 JetBrains/JAB 六种光标捕获模式
 - 提供输入法诊断页，可查看 HKL、Open Status、Conversion Mode，并捕获自定义状态码识别规则
 - 支持按进程、标题、窗口类和控件类设置高级应用规则，可独立隐藏标记、禁用记忆、禁止恢复或追加位置偏移
 - 可检测当前已打开的窗口并直接预填应用规则
@@ -82,7 +82,7 @@ dotnet publish src\ImeTool\ImeTool.csproj `
   -o artifacts\installer-publish
 
 .\installer\build-installer.ps1 `
-  -Version 1.0.22 `
+  -Version 1.0.23 `
   -PublishDir artifacts\installer-publish `
   -OutputDir artifacts\installer
 ```

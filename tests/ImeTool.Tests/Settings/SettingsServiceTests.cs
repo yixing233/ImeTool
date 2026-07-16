@@ -52,6 +52,35 @@ public sealed class SettingsServiceTests
         Assert.Equal(CaretCaptureMode.UiAutomation, actual.CaretCaptureMode);
     }
 
+    [Theory]
+    [InlineData(CaretCaptureMode.Automatic)]
+    [InlineData(CaretCaptureMode.Win32)]
+    [InlineData(CaretCaptureMode.UiAutomation)]
+    [InlineData(CaretCaptureMode.Msaa)]
+    [InlineData(CaretCaptureMode.BrowserCompatibility)]
+    [InlineData(CaretCaptureMode.JavaAccessBridge)]
+    public void Save_Then_Load_RoundTrips_All_Caret_Capture_Modes(CaretCaptureMode mode)
+    {
+        string directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        string path = Path.Combine(directory, "settings.json");
+        var service = new SettingsService(path);
+
+        service.Save(new AppSettings { CaretCaptureMode = mode });
+
+        Assert.Equal(mode, service.Load().CaretCaptureMode);
+    }
+
+    [Fact]
+    public void Normalize_Resets_Invalid_Caret_Capture_Mode()
+    {
+        AppSettings settings = new AppSettings
+        {
+            CaretCaptureMode = (CaretCaptureMode)99
+        }.Normalize();
+
+        Assert.Equal(CaretCaptureMode.Automatic, settings.CaretCaptureMode);
+    }
+
     [Fact]
     public void Load_Returns_Defaults_For_Corrupt_Json()
     {

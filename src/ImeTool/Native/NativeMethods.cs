@@ -202,6 +202,9 @@ public static class NativeMethods
     public static extern IntPtr GetKeyboardLayout(uint idThread);
 
     [DllImport("user32.dll")]
+    public static extern uint GetDpiForWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
     public static extern short GetKeyState(int virtualKey);
 
     [DllImport("user32.dll")]

@@ -535,7 +535,7 @@
                             <ui:SymbolIcon Symbol="DesktopCursor24" Style="{StaticResource RowIconStyle}" />
                             <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="8,0,16,0">
                                 <TextBlock Text="光标捕获模式" Style="{StaticResource RowTitleStyle}" />
-                                <TextBlock Text="自动融合适配多数软件，也可指定 Win32 或 UI Automation"
+                                <TextBlock Text="自动识别环境，也可指定 Win32、UIA、MSAA、浏览器或 JAB"
                                            Style="{StaticResource RowDescriptionStyle}" />
                             </StackPanel>
                             <ComboBox x:Name="CaretCaptureModeBox" Grid.Column="2" VerticalAlignment="Center" />
@@ -1221,9 +1221,8 @@
 
                         <Border Height="1" Background="{DynamicResource SettingsDividerBrush}" Margin="60,0,0,0" />
 
-                        <Grid MinHeight="190" Margin="16,8,16,12">
+                        <Grid Margin="16,10,16,14">
                             <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
@@ -1231,46 +1230,76 @@
                                 <ColumnDefinition Width="44" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
-                            <ui:SymbolIcon Symbol="DocumentSettings20" Style="{StaticResource RowIconStyle}" VerticalAlignment="Top" Margin="0,8,0,0" />
-                            <StackPanel Grid.Column="1" VerticalAlignment="Top" Margin="8,6,0,0">
-                                <TextBlock Text="高级规则" Style="{StaticResource RowTitleStyle}" />
-                                <TextBlock Text="按窗口标题、窗口类或控件类精确匹配，并独立设置行为和位置偏移"
-                                           Style="{StaticResource RowDescriptionStyle}" />
-                            </StackPanel>
+                            <ui:SymbolIcon Symbol="DocumentSettings20" Style="{StaticResource RowIconStyle}" VerticalAlignment="Top" Margin="0,6,0,0" />
+                            <Grid Grid.Column="1" Margin="8,4,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Margin="0,0,18,0">
+                                    <TextBlock Text="高级规则" Style="{StaticResource RowTitleStyle}" />
+                                    <TextBlock Text="按窗口标题、窗口类或控件类精确匹配，并独立设置行为和位置偏移"
+                                               Style="{StaticResource RowDescriptionStyle}" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Button Width="72" Content="新建" Style="{StaticResource InlineActionButtonStyle}" Click="OnNewAdvancedApplicationRuleClicked" />
+                                    <Button x:Name="EditAdvancedApplicationRuleButton" Width="72" Margin="8,0,0,0"
+                                            Content="编辑" Style="{StaticResource InlineActionButtonStyle}" IsEnabled="False" Click="OnEditAdvancedApplicationRuleClicked" />
+                                    <Button x:Name="DeleteAdvancedApplicationRuleButton" Width="72" Margin="8,0,0,0"
+                                            Content="删除" Style="{StaticResource InlineActionButtonStyle}" IsEnabled="False" Click="OnDeleteAdvancedApplicationRuleClicked" />
+                                </StackPanel>
+                            </Grid>
 
-                            <ListBox x:Name="AdvancedApplicationRulesBox"
-                                     Grid.Row="1"
-                                     Grid.Column="1"
-                                     Height="104"
-                                     Margin="8,10,0,0"
-                                     BorderThickness="1"
-                                     SelectionChanged="OnAdvancedApplicationRuleSelectionChanged"
-                                     MouseDoubleClick="OnAdvancedApplicationRuleDoubleClicked">
-                                <ListBox.ItemTemplate>
-                                    <DataTemplate>
-                                        <Grid Margin="6,5">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <StackPanel>
-                                                <TextBlock Text="{Binding MatchText}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                                                <TextBlock Text="{Binding ActionText}" Margin="0,2,0,0" FontSize="11" Foreground="#686868" TextTrimming="CharacterEllipsis" />
-                                            </StackPanel>
-                                            <TextBlock Grid.Column="1" Margin="12,0,2,0" VerticalAlignment="Center"
-                                                       Text="{Binding OffsetText}" Foreground="#0F6CBD" FontWeight="SemiBold" />
-                                        </Grid>
-                                    </DataTemplate>
-                                </ListBox.ItemTemplate>
-                            </ListBox>
+                            <Grid Grid.Row="1" Grid.Column="1" Margin="8,12,0,0">
+                                <ListBox x:Name="AdvancedApplicationRulesBox"
+                                         MinHeight="66"
+                                         MaxHeight="156"
+                                         Background="{DynamicResource SettingsPreviewBackgroundBrush}"
+                                         BorderThickness="1"
+                                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                         SelectionChanged="OnAdvancedApplicationRuleSelectionChanged"
+                                         MouseDoubleClick="OnAdvancedApplicationRuleDoubleClicked">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Margin="6,5">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel>
+                                                    <TextBlock Text="{Binding MatchText}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Text="{Binding ActionText}" Margin="0,2,0,0" FontSize="11" Foreground="#686868" TextTrimming="CharacterEllipsis" />
+                                                </StackPanel>
+                                                <TextBlock Grid.Column="1" Margin="12,0,2,0" VerticalAlignment="Center"
+                                                           Text="{Binding OffsetText}" Foreground="#0F6CBD" FontWeight="SemiBold" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
 
-                            <StackPanel Grid.Row="2" Grid.Column="1" Margin="8,8,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
-                                <Button Width="76" Height="32" Content="新建" Click="OnNewAdvancedApplicationRuleClicked" />
-                                <Button x:Name="EditAdvancedApplicationRuleButton" Width="76" Height="32" Margin="8,0,0,0"
-                                        Content="编辑" IsEnabled="False" Click="OnEditAdvancedApplicationRuleClicked" />
-                                <Button x:Name="DeleteAdvancedApplicationRuleButton" Width="76" Height="32" Margin="8,0,0,0"
-                                        Content="删除" IsEnabled="False" Click="OnDeleteAdvancedApplicationRuleClicked" />
-                            </StackPanel>
+                                <Border MinHeight="66"
+                                        Padding="16,10"
+                                        Background="{DynamicResource SettingsPreviewBackgroundBrush}"
+                                        BorderBrush="{DynamicResource SettingsDividerBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="6"
+                                        IsHitTestVisible="False">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding HasItems, ElementName=AdvancedApplicationRulesBox}" Value="False">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Orientation="Horizontal">
+                                        <TextBlock Text="暂无高级规则" FontWeight="SemiBold" Foreground="#4B4B4B" />
+                                        <TextBlock Margin="10,0,0,0" Text="点击右上角“新建”添加精确匹配规则" Foreground="#686868" FontSize="12" />
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
                         </Grid>
 
                         <Border Height="1" Background="{DynamicResource SettingsDividerBrush}" Margin="60,0,0,0" />

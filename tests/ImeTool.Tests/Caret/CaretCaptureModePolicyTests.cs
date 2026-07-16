@@ -6,63 +6,76 @@ namespace ImeTool.Tests.Caret;
 public sealed class CaretCaptureModePolicyTests
 {
     [Fact]
-    public void Automatic_Uses_Validated_Native_Caret()
+    public void Automatic_Uses_Validated_Native_Caret_For_Standard_Window()
     {
-        CaretSnapshot rawNative = Snapshot(10, CaretSource.GuiThreadInfo);
-        CaretSnapshot trustedNative = Snapshot(20, CaretSource.GuiThreadInfo);
-        CaretSnapshot automation = Snapshot(30, CaretSource.UiAutomationTextPattern);
-
-        bool found = CaretCaptureModePolicy.TrySelect(
+        CaretSnapshot selected = Select(
             CaretCaptureMode.Automatic,
-            rawNative,
-            trustedNative,
-            automation,
-            out CaretSnapshot selected);
+            CaretTargetEnvironment.Standard,
+            native: Snapshot(10, CaretSource.GuiThreadInfo),
+            trustedNative: Snapshot(20, CaretSource.GuiThreadInfo),
+            automation: Snapshot(30, CaretSource.UiAutomationTextPattern),
+            msaa: Snapshot(40, CaretSource.Msaa));
 
-        Assert.True(found);
         Assert.Equal(20, selected.ScreenRect.Left);
     }
 
     [Fact]
     public void Automatic_Does_Not_Use_Unvalidated_Native_Caret()
     {
-        bool found = CaretCaptureModePolicy.TrySelect(
+        CaretSnapshot selected = Select(
             CaretCaptureMode.Automatic,
-            Snapshot(10, CaretSource.GuiThreadInfo),
-            trustedNativeSnapshot: null,
-            Snapshot(30, CaretSource.UiAutomationTextPattern),
-            out CaretSnapshot selected);
+            CaretTargetEnvironment.Standard,
+            native: Snapshot(10, CaretSource.GuiThreadInfo),
+            automation: Snapshot(30, CaretSource.UiAutomationTextPattern));
 
-        Assert.True(found);
         Assert.Equal(CaretSource.UiAutomationTextPattern, selected.Source);
     }
 
     [Fact]
-    public void Win32_Mode_Uses_Raw_Native_Caret()
+    public void Automatic_Uses_Browser_Compatibility_Result_For_Browser()
     {
-        bool found = CaretCaptureModePolicy.TrySelect(
-            CaretCaptureMode.Win32,
-            Snapshot(10, CaretSource.GuiThreadInfo),
-            trustedNativeSnapshot: null,
-            Snapshot(30, CaretSource.UiAutomationTextPattern),
-            out CaretSnapshot selected);
+        CaretSnapshot selected = Select(
+            CaretCaptureMode.Automatic,
+            CaretTargetEnvironment.ChromiumBrowser,
+            automation: Snapshot(30, CaretSource.UiAutomationTextPattern),
+            browser: Snapshot(50, CaretSource.BrowserUiAutomation));
 
-        Assert.True(found);
-        Assert.Equal(CaretSource.GuiThreadInfo, selected.Source);
+        Assert.Equal(CaretSource.BrowserUiAutomation, selected.Source);
     }
 
     [Fact]
-    public void UiAutomation_Mode_Ignores_Native_Caret()
+    public void Automatic_Uses_Jab_First_For_Java_Window()
     {
-        bool found = CaretCaptureModePolicy.TrySelect(
-            CaretCaptureMode.UiAutomation,
-            Snapshot(10, CaretSource.GuiThreadInfo),
-            Snapshot(20, CaretSource.GuiThreadInfo),
-            Snapshot(30, CaretSource.UiAutomationTextPattern),
-            out CaretSnapshot selected);
+        CaretSnapshot selected = Select(
+            CaretCaptureMode.Automatic,
+            CaretTargetEnvironment.Java,
+            automation: Snapshot(30, CaretSource.UiAutomationTextPattern),
+            jab: Snapshot(60, CaretSource.JavaAccessBridge));
 
-        Assert.True(found);
-        Assert.Equal(CaretSource.UiAutomationTextPattern, selected.Source);
+        Assert.Equal(CaretSource.JavaAccessBridge, selected.Source);
+    }
+
+    [Theory]
+    [InlineData(CaretCaptureMode.Win32, CaretSource.GuiThreadInfo)]
+    [InlineData(CaretCaptureMode.UiAutomation, CaretSource.UiAutomationTextPattern)]
+    [InlineData(CaretCaptureMode.Msaa, CaretSource.Msaa)]
+    [InlineData(CaretCaptureMode.BrowserCompatibility, CaretSource.BrowserUiAutomation)]
+    [InlineData(CaretCaptureMode.JavaAccessBridge, CaretSource.JavaAccessBridge)]
+    public void Explicit_Mode_Uses_Only_Its_Selected_Reader(
+        CaretCaptureMode mode,
+        CaretSource expectedSource)
+    {
+        CaretSnapshot selected = Select(
+            mode,
+            CaretTargetEnvironment.Standard,
+            native: Snapshot(10, CaretSource.GuiThreadInfo),
+            trustedNative: Snapshot(20, CaretSource.GuiThreadInfo),
+            automation: Snapshot(30, CaretSource.UiAutomationTextPattern),
+            msaa: Snapshot(40, CaretSource.Msaa),
+            browser: Snapshot(50, CaretSource.BrowserUiAutomation),
+            jab: Snapshot(60, CaretSource.JavaAccessBridge));
+
+        Assert.Equal(expectedSource, selected.Source);
     }
 
     [Fact]
@@ -71,6 +84,29 @@ public sealed class CaretCaptureModePolicyTests
         Assert.Equal(
             CaretCaptureMode.Automatic,
             CaretCaptureModePolicy.Normalize((CaretCaptureMode)99));
+    }
+
+    private static CaretSnapshot Select(
+        CaretCaptureMode mode,
+        CaretTargetEnvironment environment,
+        CaretSnapshot? native = null,
+        CaretSnapshot? trustedNative = null,
+        CaretSnapshot? automation = null,
+        CaretSnapshot? msaa = null,
+        CaretSnapshot? browser = null,
+        CaretSnapshot? jab = null)
+    {
+        Assert.True(CaretCaptureModePolicy.TrySelect(
+            mode,
+            environment,
+            native,
+            trustedNative,
+            automation,
+            msaa,
+            browser,
+            jab,
+            out CaretSnapshot selected));
+        return selected;
     }
 
     private static CaretSnapshot Snapshot(int left, CaretSource source) => new(

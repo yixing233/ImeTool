@@ -28,6 +28,7 @@ public sealed class UiAutomationCaretReader : IDisposable
 
     private readonly object _syncRoot = new();
     private readonly Func<IntPtr, UiAutomationCaretReadResult> _read;
+    private readonly string _operationName;
     private readonly AutoResetEvent _requestAvailable = new(false);
     private readonly Thread _worker;
     private int _generation;
@@ -40,13 +41,16 @@ public sealed class UiAutomationCaretReader : IDisposable
     private UiAutomationCaretReadResult _completedResult;
     private bool _disposed;
 
-    public UiAutomationCaretReader(Func<IntPtr, UiAutomationCaretReadResult> read)
+    public UiAutomationCaretReader(
+        Func<IntPtr, UiAutomationCaretReadResult> read,
+        string operationName = "UI Automation")
     {
         _read = read;
+        _operationName = operationName;
         _worker = new Thread(WorkerLoop)
         {
             IsBackground = true,
-            Name = "ImeTool.UIAutomationCaret"
+            Name = $"ImeTool.{operationName.Replace(" ", string.Empty)}Caret"
         };
         _worker.SetApartmentState(ApartmentState.MTA);
         _worker.Start();
@@ -60,7 +64,7 @@ public sealed class UiAutomationCaretReader : IDisposable
         bool hasResult = TryGetResult(foregroundHwnd, out UiAutomationCaretReadResult result);
         failureReason = hasResult
             ? result.FailureReason
-            : "UI Automation caret lookup is pending.";
+            : $"{_operationName} caret lookup is pending.";
         snapshot = hasResult && result.Found ? result.Snapshot : default;
         return hasResult && result.Found;
     }
@@ -158,7 +162,7 @@ public sealed class UiAutomationCaretReader : IDisposable
                 catch (Exception exception)
                 {
                     result = UiAutomationCaretReadResult.Failure(
-                        $"UI Automation failed with {exception.GetType().Name}: {exception.Message}",
+                        $"{_operationName} failed with {exception.GetType().Name}: {exception.Message}",
                         trustNativeCaret: true,
                         focusHwnd: foregroundHwnd);
                 }

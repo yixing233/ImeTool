@@ -261,13 +261,25 @@ public partial class SettingsWindow : FluentWindow
             CaretCaptureMode.Automatic,
             "融合 Win32 与 UI Automation，并过滤非输入区域的过期光标。"));
         CaretCaptureModeBox.Items.Add(CreateCaretCaptureModeItem(
-            "Win32 原生",
+            "Win32 Caret",
             CaretCaptureMode.Win32,
             "仅使用 GetGUIThreadInfo，适合传统桌面输入框。"));
         CaretCaptureModeBox.Items.Add(CreateCaretCaptureModeItem(
             "UI Automation",
             CaretCaptureMode.UiAutomation,
             "仅使用 UI Automation，适合浏览器及现代应用输入框。"));
+        CaretCaptureModeBox.Items.Add(CreateCaretCaptureModeItem(
+            "MSAA",
+            CaretCaptureMode.Msaa,
+            "通过 Microsoft Active Accessibility 的 OBJID_CARET 获取光标。"));
+        CaretCaptureModeBox.Items.Add(CreateCaretCaptureModeItem(
+            "浏览器兼容",
+            CaretCaptureMode.BrowserCompatibility,
+            "针对 Chromium 与 Firefox 组合 UI Automation、MSAA 和 Win32 光标。"));
+        CaretCaptureModeBox.Items.Add(CreateCaretCaptureModeItem(
+            "JetBrains/JAB",
+            CaretCaptureMode.JavaAccessBridge,
+            "通过 Java Access Bridge 获取 JetBrains 与其他 Java 编辑器光标。"));
     }
 
     private static ComboBoxItem CreateCaretCaptureModeItem(

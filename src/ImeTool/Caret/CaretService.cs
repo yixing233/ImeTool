@@ -9,14 +9,22 @@ public enum CaretSource
 {
     GuiThreadInfo = 0,
     UiAutomationTextPattern = 1,
-    UiAutomationElementBounds = 2
+    UiAutomationElementBounds = 2,
+    Msaa = 3,
+    BrowserUiAutomation = 4,
+    BrowserMsaa = 5,
+    BrowserWin32 = 6,
+    JavaAccessBridge = 7
 }
 
 public enum CaretCaptureMode
 {
     Automatic = 0,
     Win32 = 1,
-    UiAutomation = 2
+    UiAutomation = 2,
+    Msaa = 3,
+    BrowserCompatibility = 4,
+    JavaAccessBridge = 5
 }
 
 public readonly record struct CaretSnapshot(
@@ -43,11 +51,17 @@ public interface ICaretService
 public sealed class CaretService : ICaretService, IDisposable
 {
     private readonly UiAutomationCaretReader _uiAutomationReader;
+    private readonly UiAutomationCaretReader _msaaReader;
+    private readonly JavaAccessBridgeCaretReader _javaAccessBridgeReader;
     private CaretCaptureMode _captureMode = CaretCaptureMode.Automatic;
+    private IntPtr _environmentHwnd;
+    private CaretTargetEnvironment _environment;
 
     public CaretService()
     {
         _uiAutomationReader = new UiAutomationCaretReader(ReadCaretFromUiAutomation);
+        _msaaReader = new UiAutomationCaretReader(MsaaCaretReader.Read, "MSAA");
+        _javaAccessBridgeReader = new JavaAccessBridgeCaretReader();
     }
 
     public string? LastFailureReason { get; private set; }
@@ -66,8 +80,23 @@ public sealed class CaretService : ICaretService, IDisposable
 
     public bool TryGetCaret(out CaretSnapshot snapshot)
     {
+        IntPtr foreground = NativeMethods.GetForegroundWindow();
+        if (foreground == IntPtr.Zero)
+        {
+            snapshot = default;
+            LastFailureReason = "No foreground window is available.";
+            return false;
+        }
+
+        CaretTargetEnvironment environment = _captureMode is CaretCaptureMode.Automatic or
+            CaretCaptureMode.BrowserCompatibility or CaretCaptureMode.JavaAccessBridge
+            ? GetTargetEnvironment(foreground)
+            : CaretTargetEnvironment.Standard;
+
         CaretSnapshot nativeSnapshot = default;
-        bool foundNative = _captureMode != CaretCaptureMode.UiAutomation &&
+        bool needsNative = _captureMode is CaretCaptureMode.Automatic or
+            CaretCaptureMode.Win32 or CaretCaptureMode.BrowserCompatibility;
+        bool foundNative = needsNative &&
                            TryGetCaretFromGuiThreadInfo(out nativeSnapshot);
 
         if (_captureMode == CaretCaptureMode.Win32)
@@ -79,12 +108,22 @@ public sealed class CaretService : ICaretService, IDisposable
             return foundNative;
         }
 
-        IntPtr foreground = NativeMethods.GetForegroundWindow();
         UiAutomationCaretReadResult automationResult = default;
-        bool hasAutomationResult = foreground != IntPtr.Zero &&
+        bool needsAutomation = _captureMode is CaretCaptureMode.Automatic or
+            CaretCaptureMode.UiAutomation or CaretCaptureMode.BrowserCompatibility;
+        bool hasAutomationResult = needsAutomation &&
                                    _uiAutomationReader.TryGetResult(
                                        foreground,
                                        out automationResult);
+        UiAutomationCaretReadResult jabResult = default;
+        bool needsJab = _captureMode == CaretCaptureMode.JavaAccessBridge ||
+                        (_captureMode == CaretCaptureMode.Automatic &&
+                         environment == CaretTargetEnvironment.Java);
+        if (needsJab)
+        {
+            jabResult = _javaAccessBridgeReader.Read(foreground);
+        }
+
         CaretSnapshot? trustedNativeSnapshot = null;
         if (foundNative && hasAutomationResult && automationResult.TrustNativeCaret &&
             IsSameTargetProcess(nativeSnapshot.FocusHwnd, automationResult.FocusHwnd) &&
@@ -97,11 +136,46 @@ public sealed class CaretService : ICaretService, IDisposable
         CaretSnapshot? automationSnapshot = hasAutomationResult && automationResult.Found
             ? automationResult.Snapshot
             : null;
+        bool browserNeedsMsaa = environment == CaretTargetEnvironment.FirefoxBrowser ||
+                                (automationSnapshot is null && trustedNativeSnapshot is null);
+        bool needsMsaa = _captureMode == CaretCaptureMode.Msaa ||
+                         (_captureMode is CaretCaptureMode.Automatic or
+                             CaretCaptureMode.BrowserCompatibility && browserNeedsMsaa);
+        UiAutomationCaretReadResult msaaResult = default;
+        bool hasMsaaResult = needsMsaa &&
+                             _msaaReader.TryGetResult(foreground, out msaaResult);
+        CaretSnapshot? msaaSnapshot = hasMsaaResult && msaaResult.Found
+            ? msaaResult.Snapshot
+            : null;
+        CaretSnapshot? jabSnapshot = needsJab && jabResult.Found
+            ? jabResult.Snapshot
+            : null;
+        CaretSnapshot? browserSnapshot = null;
+        if (_captureMode == CaretCaptureMode.BrowserCompatibility ||
+            (_captureMode == CaretCaptureMode.Automatic && environment is
+                CaretTargetEnvironment.ChromiumBrowser or CaretTargetEnvironment.FirefoxBrowser))
+        {
+            BrowserCaretCompatibilityPolicy.TrySelect(
+                environment,
+                automationSnapshot,
+                msaaSnapshot,
+                trustedNativeSnapshot,
+                out CaretSnapshot compatibleSnapshot);
+            if (compatibleSnapshot != default)
+            {
+                browserSnapshot = compatibleSnapshot;
+            }
+        }
+
         if (CaretCaptureModePolicy.TrySelect(
                 _captureMode,
+                environment,
                 foundNative ? nativeSnapshot : null,
                 trustedNativeSnapshot,
                 automationSnapshot,
+                msaaSnapshot,
+                browserSnapshot,
+                jabSnapshot,
                 out snapshot))
         {
             LastFailureReason = null;
@@ -109,23 +183,70 @@ public sealed class CaretService : ICaretService, IDisposable
         }
 
         snapshot = default;
-        LastFailureReason = foreground == IntPtr.Zero
-            ? "No foreground window is available."
-            : hasAutomationResult
-                ? automationResult.FailureReason ?? "UI Automation returned no exact caret."
-                : "UI Automation caret lookup is pending.";
+        LastFailureReason = GetFailureReason(
+            hasAutomationResult,
+            automationResult,
+            hasMsaaResult,
+            msaaResult,
+            needsJab,
+            jabResult);
         return false;
     }
 
     public void Invalidate()
     {
         _uiAutomationReader.Invalidate();
+        _msaaReader.Invalidate();
+        _environmentHwnd = IntPtr.Zero;
+        _environment = CaretTargetEnvironment.Standard;
     }
 
     public void Dispose()
     {
         _uiAutomationReader.Dispose();
+        _msaaReader.Dispose();
+        _javaAccessBridgeReader.Dispose();
     }
+
+    private CaretTargetEnvironment GetTargetEnvironment(IntPtr foreground)
+    {
+        if (_environmentHwnd == foreground)
+        {
+            return _environment;
+        }
+
+        _environmentHwnd = foreground;
+        _environment = CaretCaptureEnvironmentClassifier.Detect(foreground);
+        return _environment;
+    }
+
+    private string GetFailureReason(
+        bool hasAutomationResult,
+        UiAutomationCaretReadResult automationResult,
+        bool hasMsaaResult,
+        UiAutomationCaretReadResult msaaResult,
+        bool needsJab,
+        UiAutomationCaretReadResult jabResult) => _captureMode switch
+    {
+        CaretCaptureMode.UiAutomation => hasAutomationResult
+            ? automationResult.FailureReason ?? "UI Automation returned no exact caret."
+            : "UI Automation caret lookup is pending.",
+        CaretCaptureMode.Msaa => hasMsaaResult
+            ? msaaResult.FailureReason ?? "MSAA returned no exact caret."
+            : "MSAA caret lookup is pending.",
+        CaretCaptureMode.JavaAccessBridge => needsJab
+            ? jabResult.FailureReason ?? "JAB returned no exact caret."
+            : "JAB is not active for this window.",
+        CaretCaptureMode.BrowserCompatibility =>
+            "Browser compatibility capture returned no exact caret.",
+        _ when needsJab && !jabResult.Found =>
+            jabResult.FailureReason ?? "Automatic JAB capture returned no exact caret.",
+        _ when hasAutomationResult =>
+            automationResult.FailureReason ?? "Automatic capture returned no exact caret.",
+        _ when hasMsaaResult =>
+            msaaResult.FailureReason ?? "Automatic MSAA capture returned no exact caret.",
+        _ => "Automatic caret lookup is pending."
+    };
 
     private bool TryGetCaretFromGuiThreadInfo(out CaretSnapshot snapshot)
     {
@@ -646,16 +767,28 @@ public static class CaretCaptureModePolicy
 
     public static bool TrySelect(
         CaretCaptureMode mode,
+        CaretTargetEnvironment environment,
         CaretSnapshot? nativeSnapshot,
         CaretSnapshot? trustedNativeSnapshot,
         CaretSnapshot? automationSnapshot,
+        CaretSnapshot? msaaSnapshot,
+        CaretSnapshot? browserSnapshot,
+        CaretSnapshot? jabSnapshot,
         out CaretSnapshot snapshot)
     {
         CaretSnapshot? selected = Normalize(mode) switch
         {
             CaretCaptureMode.Win32 => nativeSnapshot,
             CaretCaptureMode.UiAutomation => automationSnapshot,
-            _ => trustedNativeSnapshot ?? automationSnapshot
+            CaretCaptureMode.Msaa => msaaSnapshot,
+            CaretCaptureMode.BrowserCompatibility => browserSnapshot,
+            CaretCaptureMode.JavaAccessBridge => jabSnapshot,
+            _ when environment == CaretTargetEnvironment.Java =>
+                jabSnapshot ?? trustedNativeSnapshot ?? automationSnapshot ?? msaaSnapshot,
+            _ when environment is CaretTargetEnvironment.ChromiumBrowser or
+                CaretTargetEnvironment.FirefoxBrowser =>
+                browserSnapshot ?? trustedNativeSnapshot ?? automationSnapshot ?? msaaSnapshot,
+            _ => trustedNativeSnapshot ?? automationSnapshot ?? msaaSnapshot
         };
 
         snapshot = selected ?? default;
