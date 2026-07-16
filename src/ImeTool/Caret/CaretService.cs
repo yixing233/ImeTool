@@ -12,6 +12,13 @@ public enum CaretSource
     UiAutomationElementBounds = 2
 }
 
+public enum CaretCaptureMode
+{
+    Automatic = 0,
+    Win32 = 1,
+    UiAutomation = 2
+}
+
 public readonly record struct CaretSnapshot(
     IntPtr FocusHwnd,
     IntPtr CaretHwnd,
@@ -24,6 +31,10 @@ public interface ICaretService
 
     bool TryGetCaret(out CaretSnapshot snapshot);
 
+    void SetCaptureMode(CaretCaptureMode mode)
+    {
+    }
+
     void Invalidate()
     {
     }
@@ -32,6 +43,7 @@ public interface ICaretService
 public sealed class CaretService : ICaretService, IDisposable
 {
     private readonly UiAutomationCaretReader _uiAutomationReader;
+    private CaretCaptureMode _captureMode = CaretCaptureMode.Automatic;
 
     public CaretService()
     {
@@ -40,9 +52,32 @@ public sealed class CaretService : ICaretService, IDisposable
 
     public string? LastFailureReason { get; private set; }
 
+    public void SetCaptureMode(CaretCaptureMode mode)
+    {
+        CaretCaptureMode normalized = CaretCaptureModePolicy.Normalize(mode);
+        if (_captureMode == normalized)
+        {
+            return;
+        }
+
+        _captureMode = normalized;
+        Invalidate();
+    }
+
     public bool TryGetCaret(out CaretSnapshot snapshot)
     {
-        bool foundNative = TryGetCaretFromGuiThreadInfo(out CaretSnapshot nativeSnapshot);
+        CaretSnapshot nativeSnapshot = default;
+        bool foundNative = _captureMode != CaretCaptureMode.UiAutomation &&
+                           TryGetCaretFromGuiThreadInfo(out nativeSnapshot);
+
+        if (_captureMode == CaretCaptureMode.Win32)
+        {
+            snapshot = nativeSnapshot;
+            LastFailureReason = foundNative
+                ? null
+                : "Win32 GetGUIThreadInfo returned no valid caret.";
+            return foundNative;
+        }
 
         IntPtr foreground = NativeMethods.GetForegroundWindow();
         UiAutomationCaretReadResult automationResult = default;
@@ -50,23 +85,25 @@ public sealed class CaretService : ICaretService, IDisposable
                                    _uiAutomationReader.TryGetResult(
                                        foreground,
                                        out automationResult);
-        if (foundNative &&
-            hasAutomationResult &&
-            automationResult.TrustNativeCaret &&
+        CaretSnapshot? trustedNativeSnapshot = null;
+        if (foundNative && hasAutomationResult && automationResult.TrustNativeCaret &&
             IsSameTargetProcess(nativeSnapshot.FocusHwnd, automationResult.FocusHwnd) &&
-            CaretGeometry.TryNormalizeNativeRect(
-                nativeSnapshot.ScreenRect,
-                automationResult.NativeCaretBoundsHint,
-                out NativeMethods.RECT normalizedNativeRect))
+            CaretGeometry.TryNormalizeNativeRect(nativeSnapshot.ScreenRect,
+                automationResult.NativeCaretBoundsHint, out NativeMethods.RECT normalizedNativeRect))
         {
-            snapshot = nativeSnapshot with { ScreenRect = normalizedNativeRect };
-            LastFailureReason = null;
-            return true;
+            trustedNativeSnapshot = nativeSnapshot with { ScreenRect = normalizedNativeRect };
         }
 
-        if (hasAutomationResult && automationResult.Found)
+        CaretSnapshot? automationSnapshot = hasAutomationResult && automationResult.Found
+            ? automationResult.Snapshot
+            : null;
+        if (CaretCaptureModePolicy.TrySelect(
+                _captureMode,
+                foundNative ? nativeSnapshot : null,
+                trustedNativeSnapshot,
+                automationSnapshot,
+                out snapshot))
         {
-            snapshot = automationResult.Snapshot;
             LastFailureReason = null;
             return true;
         }
@@ -599,5 +636,29 @@ public sealed class CaretService : ICaretService, IDisposable
         }
 
         return CaretGeometry.TryCreateExactRect(rectangles[0], out rect);
+    }
+}
+
+public static class CaretCaptureModePolicy
+{
+    public static CaretCaptureMode Normalize(CaretCaptureMode mode) =>
+        Enum.IsDefined(mode) ? mode : CaretCaptureMode.Automatic;
+
+    public static bool TrySelect(
+        CaretCaptureMode mode,
+        CaretSnapshot? nativeSnapshot,
+        CaretSnapshot? trustedNativeSnapshot,
+        CaretSnapshot? automationSnapshot,
+        out CaretSnapshot snapshot)
+    {
+        CaretSnapshot? selected = Normalize(mode) switch
+        {
+            CaretCaptureMode.Win32 => nativeSnapshot,
+            CaretCaptureMode.UiAutomation => automationSnapshot,
+            _ => trustedNativeSnapshot ?? automationSnapshot
+        };
+
+        snapshot = selected ?? default;
+        return selected.HasValue;
     }
 }

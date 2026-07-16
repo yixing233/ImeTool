@@ -1,3 +1,4 @@
+using ImeTool.Caret;
 using ImeTool.Ime;
 using ImeTool.Settings;
 
@@ -22,6 +23,7 @@ public sealed class SettingsServiceTests
         Assert.Equal(string.Empty, settings.WindowMemoryStoragePath);
         Assert.Equal(SettingsWindowBackdrop.Acrylic, settings.SettingsBackdrop);
         Assert.Equal(MarkerDisplayMode.Always, settings.MarkerBehavior.DisplayMode);
+        Assert.Equal(CaretCaptureMode.Automatic, settings.CaretCaptureMode);
         Assert.True(settings.GlobalHotkeysEnabled);
     }
 
@@ -36,7 +38,8 @@ public sealed class SettingsServiceTests
             Enabled = false,
             StartWithWindows = true,
             SilentStart = false,
-            AutoCheckForUpdates = false
+            AutoCheckForUpdates = false,
+            CaretCaptureMode = CaretCaptureMode.UiAutomation
         };
 
         service.Save(expected);
@@ -46,6 +49,7 @@ public sealed class SettingsServiceTests
         Assert.True(actual.StartWithWindows);
         Assert.False(actual.SilentStart);
         Assert.False(actual.AutoCheckForUpdates);
+        Assert.Equal(CaretCaptureMode.UiAutomation, actual.CaretCaptureMode);
     }
 
     [Fact]
@@ -133,7 +137,7 @@ public sealed class SettingsServiceTests
         ImeDetectionRule detectionRule = Assert.Single(actual.ImeDetectionRules);
         Assert.Equal("0x0000000008040804", detectionRule.KeyboardLayout);
         Assert.Equal(TextInputMode.Chinese, detectionRule.Result);
-        Assert.Equal(14, actual.SettingsVersion);
+        Assert.Equal(15, actual.SettingsVersion);
     }
 
     [Fact]
@@ -267,7 +271,7 @@ public sealed class SettingsServiceTests
         AppSettings actual = service.Load();
 
         Assert.True(actual.AutoCheckForUpdates);
-        Assert.Equal(14, actual.SettingsVersion);
+        Assert.Equal(15, actual.SettingsVersion);
 
     }
 

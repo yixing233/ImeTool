@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using ImeTool.Caret;
 using ImeTool.Ime;
 
 namespace ImeTool.Settings;
@@ -226,7 +227,7 @@ public sealed record MarkerAppearanceSettings
 
 public sealed record AppSettings
 {
-    public int SettingsVersion { get; init; } = 14;
+    public int SettingsVersion { get; init; } = 15;
     public bool Enabled { get; init; } = true;
     public bool StartWithWindows { get; init; } = false;
     public bool SilentStart { get; init; } = true;
@@ -237,6 +238,7 @@ public sealed record AppSettings
     public SettingsWindowBackdrop SettingsBackdrop { get; init; } = SettingsWindowBackdrop.Acrylic;
     public MarkerAppearanceSettings Marker { get; init; } = new();
     public MarkerBehaviorSettings MarkerBehavior { get; init; } = new();
+    public CaretCaptureMode CaretCaptureMode { get; init; } = CaretCaptureMode.Automatic;
     public bool GlobalHotkeysEnabled { get; init; } = true;
     public GlobalHotkeySettings Hotkeys { get; init; } = new();
     public IReadOnlyList<ApplicationRule> ApplicationRules { get; init; } = [];
@@ -253,13 +255,14 @@ public sealed record AppSettings
 
         return this with
         {
-            SettingsVersion = 14,
+            SettingsVersion = 15,
             WindowMemoryStoragePath = WindowMemoryStoragePath?.Trim() ?? string.Empty,
             SettingsBackdrop = Enum.IsDefined(SettingsBackdrop)
                 ? SettingsBackdrop
                 : SettingsWindowBackdrop.Acrylic,
             Marker = marker.Normalize(),
             MarkerBehavior = (MarkerBehavior ?? new MarkerBehaviorSettings()).Normalize(),
+            CaretCaptureMode = CaretCaptureModePolicy.Normalize(CaretCaptureMode),
             GlobalHotkeysEnabled = hotkeys.Enabled,
             Hotkeys = hotkeys,
             ApplicationRules = ApplicationRuleNormalizer.Normalize(ApplicationRules),

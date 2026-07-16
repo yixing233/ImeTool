@@ -197,7 +197,7 @@
                             Margin="0,0,8,0"
                             Click="OnCancelClicked">
                         <StackPanel Orientation="Horizontal">
-                            <ui:SymbolIcon Symbol="DismissCircle32" FontSize="17" Margin="0,0,7,0" />
+                            <ui:SymbolIcon Symbol="Dismiss20" FontSize="17" Margin="0,0,7,0" />
                             <TextBlock Text="取消" />
                         </StackPanel>
                     </Button>
@@ -426,7 +426,7 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="210" />
                             </Grid.ColumnDefinitions>
-                            <ui:SymbolIcon Symbol="WindowBrush24" Style="{StaticResource RowIconStyle}" />
+                            <ui:SymbolIcon Symbol="LayerDiagonalSparkle24" Style="{StaticResource RowIconStyle}" />
                             <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="8,0,16,0">
                                 <TextBlock Text="设置窗口材质" Style="{StaticResource RowTitleStyle}" />
                                 <TextBlock Text="选择云母或亚克力系统背景" Style="{StaticResource RowDescriptionStyle}" />
@@ -522,6 +522,23 @@
                                 <TextBlock Text="常驻显示，或仅在状态变化与输入时短暂显示" Style="{StaticResource RowDescriptionStyle}" />
                             </StackPanel>
                             <ComboBox x:Name="DisplayModeBox" Grid.Column="2" VerticalAlignment="Center" />
+                        </Grid>
+
+                        <Border Height="1" Background="{DynamicResource SettingsDividerBrush}" Margin="60,0,0,0" />
+
+                        <Grid MinHeight="72" Margin="16,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="44" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="210" />
+                            </Grid.ColumnDefinitions>
+                            <ui:SymbolIcon Symbol="DesktopCursor24" Style="{StaticResource RowIconStyle}" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="8,0,16,0">
+                                <TextBlock Text="光标捕获模式" Style="{StaticResource RowTitleStyle}" />
+                                <TextBlock Text="自动融合适配多数软件，也可指定 Win32 或 UI Automation"
+                                           Style="{StaticResource RowDescriptionStyle}" />
+                            </StackPanel>
+                            <ComboBox x:Name="CaretCaptureModeBox" Grid.Column="2" VerticalAlignment="Center" />
                         </Grid>
 
                         <Border Height="1" Background="{DynamicResource SettingsDividerBrush}" Margin="60,0,0,0" />
@@ -1083,8 +1100,8 @@
                                     <RowDefinition Height="Auto" />
                                 </Grid.RowDefinitions>
                                 <StackPanel Orientation="Horizontal">
-                                    <Button Width="128" Margin="0,0,8,0" Content="当前数据设为中文" Style="{StaticResource InlineActionButtonStyle}" Click="OnCaptureChineseImeRuleClicked" />
-                                    <Button Width="128" Margin="0,0,8,0" Content="当前数据设为英文" Style="{StaticResource InlineActionButtonStyle}" Click="OnCaptureEnglishImeRuleClicked" />
+                                    <Button Width="156" Margin="0,0,8,0" Content="当前数据设为中文" Style="{StaticResource InlineActionButtonStyle}" Click="OnCaptureChineseImeRuleClicked" />
+                                    <Button Width="156" Margin="0,0,8,0" Content="当前数据设为英文" Style="{StaticResource InlineActionButtonStyle}" Click="OnCaptureEnglishImeRuleClicked" />
                                     <Button Width="88" Content="删除规则" Style="{StaticResource InlineActionButtonStyle}" Click="OnDeleteImeRuleClicked" />
                                 </StackPanel>
                                 <ListBox x:Name="ImeDetectionRulesList"

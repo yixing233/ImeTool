@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using ImeTool.Overlay;
+using ImeTool.Caret;
 using ImeTool.Hotkeys;
 using ImeTool.Settings;
 using ImeTool.State;
@@ -166,6 +167,7 @@ public partial class SettingsWindow : FluentWindow
         InitializeStyleBox();
         InitializeBackdropBox();
         InitializeDisplayModeBox();
+        InitializeCaretCaptureModeBox();
         LoadFromSettings(Settings);
         _isInitialized = true;
         UpdateLivePreview();
@@ -176,6 +178,7 @@ public partial class SettingsWindow : FluentWindow
     }
 
     public AppSettings Settings { get; private set; }
+    public event Action<AppSettings>? SettingsSaved;
 
     protected override void OnClosed(EventArgs e)
     {
@@ -251,6 +254,32 @@ public partial class SettingsWindow : FluentWindow
         Tag = mode
     };
 
+    private void InitializeCaretCaptureModeBox()
+    {
+        CaretCaptureModeBox.Items.Add(CreateCaretCaptureModeItem(
+            "自动（推荐）",
+            CaretCaptureMode.Automatic,
+            "融合 Win32 与 UI Automation，并过滤非输入区域的过期光标。"));
+        CaretCaptureModeBox.Items.Add(CreateCaretCaptureModeItem(
+            "Win32 原生",
+            CaretCaptureMode.Win32,
+            "仅使用 GetGUIThreadInfo，适合传统桌面输入框。"));
+        CaretCaptureModeBox.Items.Add(CreateCaretCaptureModeItem(
+            "UI Automation",
+            CaretCaptureMode.UiAutomation,
+            "仅使用 UI Automation，适合浏览器及现代应用输入框。"));
+    }
+
+    private static ComboBoxItem CreateCaretCaptureModeItem(
+        string text,
+        CaretCaptureMode mode,
+        string toolTip) => new()
+    {
+        Content = text,
+        Tag = mode,
+        ToolTip = toolTip
+    };
+
     private void LoadFromSettings(AppSettings settings)
     {
         bool updateAfterLoad = _isInitialized;
@@ -292,6 +321,7 @@ public partial class SettingsWindow : FluentWindow
         ChineseStateStyleTab.IsChecked = true;
         LoadStateEditor(_stateEditorState);
         SelectDisplayMode(normalized.MarkerBehavior.DisplayMode);
+        SelectCaretCaptureMode(normalized.CaretCaptureMode);
         AutoHideDelayBox.Text = normalized.MarkerBehavior.AutoHideDelayMilliseconds.ToString(CultureInfo.InvariantCulture);
         MotionBox.IsChecked = normalized.MarkerBehavior.EnableMotion;
         FollowAnimationDurationBox.Text = normalized.MarkerBehavior.FollowAnimationDurationMilliseconds.ToString(CultureInfo.InvariantCulture);
@@ -359,6 +389,20 @@ public partial class SettingsWindow : FluentWindow
         }
 
         DisplayModeBox.SelectedIndex = 0;
+    }
+
+    private void SelectCaretCaptureMode(CaretCaptureMode mode)
+    {
+        foreach (ComboBoxItem item in CaretCaptureModeBox.Items)
+        {
+            if (item.Tag is CaretCaptureMode itemMode && itemMode == mode)
+            {
+                CaretCaptureModeBox.SelectedItem = item;
+                return;
+            }
+        }
+
+        CaretCaptureModeBox.SelectedIndex = 0;
     }
 
     private void OnPreviewSettingChanged(object sender, RoutedEventArgs e)
@@ -539,7 +583,7 @@ public partial class SettingsWindow : FluentWindow
         Settings = settings;
         SaveHintText.Foreground = new SolidColorBrush(MediaColor.FromRgb(0x0F, 0x7B, 0x0F));
         SaveHintText.Text = "设置已保存";
-        DialogResult = true;
+        SettingsSaved?.Invoke(settings);
     }
 
     private bool TryBuildSettings(out AppSettings settings, out string? validationError)
@@ -586,6 +630,7 @@ public partial class SettingsWindow : FluentWindow
             SettingsBackdrop = SelectedBackdrop(),
             Marker = ReadMarkerSettings(),
             MarkerBehavior = ReadMarkerBehaviorSettings(),
+            CaretCaptureMode = SelectedCaretCaptureMode(),
             GlobalHotkeysEnabled = hotkeys.Enabled,
             Hotkeys = hotkeys,
             ApplicationRules = ReadApplicationRules(),
@@ -1651,6 +1696,11 @@ public partial class SettingsWindow : FluentWindow
         DisplayModeBox.SelectedItem is ComboBoxItem item && item.Tag is MarkerDisplayMode mode
             ? mode
             : MarkerDisplayMode.Always;
+
+    private CaretCaptureMode SelectedCaretCaptureMode() =>
+        CaretCaptureModeBox.SelectedItem is ComboBoxItem item && item.Tag is CaretCaptureMode mode
+            ? mode
+            : CaretCaptureMode.Automatic;
 
     private static int ParseInt(string text, int fallback) => int.TryParse(text, out int value) ? value : fallback;
 

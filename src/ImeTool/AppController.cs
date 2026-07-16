@@ -59,6 +59,7 @@ public sealed class AppController : IDisposable
         }
 
         _caretService = new CaretService();
+        _caretService.SetCaptureMode(_settings.CaretCaptureMode);
         _caretStabilizer = new CaretSnapshotStabilizer();
         _markerVisibility = new MarkerVisibilityController();
         _capsLockService = new CapsLockService();
@@ -364,24 +365,24 @@ public sealed class AppController : IDisposable
             Topmost = false
         };
 
-        bool? result;
+        Action<AppSettings> applySettings = settings => ApplySettings(settings, keepGlobalHotkeysDisabled: true);
+        window.SettingsSaved += applySettings;
         _globalHotkeys.SetSettings(_settings.Hotkeys with { Enabled = false });
         try
         {
-            result = window.ShowDialog();
+            window.ShowDialog();
         }
         finally
         {
+            window.SettingsSaved -= applySettings;
             _settingsWindowOpen = false;
             _globalHotkeys.SetSettings(_settings.Hotkeys);
         }
+    }
 
-        if (result != true)
-        {
-            return;
-        }
-
-        AppSettings newSettings = window.Settings.Normalize();
+    private void ApplySettings(AppSettings newSettings, bool keepGlobalHotkeysDisabled)
+    {
+        newSettings = newSettings.Normalize();
         if (newSettings.StartWithWindows != _settings.StartWithWindows)
         {
             _startupManager.SetEnabled(newSettings.StartWithWindows);
@@ -397,14 +398,19 @@ public sealed class AppController : IDisposable
         _applicationRuleMatcher = new ApplicationRuleMatcher(_settings.ApplicationRules);
         _applicationRuleMatchCache.Clear();
         _imeDiagnosticService?.SetDetectionRules(_settings.ImeDetectionRules);
+        _caretService.SetCaptureMode(_settings.CaretCaptureMode);
+        _caretService.Invalidate();
+        _caretStabilizer.Reset();
         _processNameResolver.Clear();
         _markerVisibility.Reset();
         _overlay.ConfigureBehavior(_settings.MarkerBehavior);
-        _globalHotkeys.SetSettings(_settings.Hotkeys);
+        _globalHotkeys.SetSettings(keepGlobalHotkeysDisabled
+            ? _settings.Hotkeys with { Enabled = false }
+            : _settings.Hotkeys);
         _settingsService.Save(_settings);
         _trayIcon.SetEnabledChecked(_settings.Enabled);
         _trayIcon.SetStartupChecked(_settings.StartWithWindows);
-        DiagnosticsLog.Write($"Settings saved: enabled={_settings.Enabled}, silentStart={_settings.SilentStart}, style={_settings.Marker.Style}, size={_settings.Marker.Size}, offset=({_settings.Marker.OffsetX},{_settings.Marker.OffsetY}).");
+        DiagnosticsLog.Write($"Settings saved: enabled={_settings.Enabled}, silentStart={_settings.SilentStart}, caretCapture={_settings.CaretCaptureMode}, style={_settings.Marker.Style}, size={_settings.Marker.Size}, offset=({_settings.Marker.OffsetX},{_settings.Marker.OffsetY}).");
         if (!_settings.Enabled)
         {
             _overlay.HideMarker();
