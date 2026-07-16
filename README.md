@@ -79,7 +79,7 @@ dotnet publish src\ImeTool\ImeTool.csproj `
   -o artifacts\installer-publish
 
 .\installer\build-installer.ps1 `
-  -Version 1.0.17 `
+  -Version 1.0.18 `
   -PublishDir artifacts\installer-publish `
   -OutputDir artifacts\installer
 ```
@@ -94,9 +94,9 @@ artifacts/installer/ImeTool_Windows_x64.exe
 
 项目通过 GitHub Actions 自动构建 Release。发布新版本时：
 
-1. 更新 `src/ImeTool/ImeTool.csproj` 中的 `Version`。
+1. 更新 `src/ImeTool/ImeTool.csproj` 中的 `Version`，并在 `CHANGELOG.md` 添加同版本说明。
 2. 提交代码并创建对应的版本标签。
-3. 推送标签，工作流会自动测试并发布 `ImeTool_Windows_x64.exe`。
+3. 推送标签，工作流会自动测试、提取更新日志并发布 `ImeTool_Windows_x64.exe`。
 
 ```powershell
 git tag v1.0.0

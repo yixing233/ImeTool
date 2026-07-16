@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Net.Http;
@@ -96,7 +97,9 @@ public partial class SettingsWindow : FluentWindow
     private readonly CancellationTokenSource _updateCancellation = new();
     private MarkerState _stateEditorState = MarkerState.Chinese;
     private UpdateRelease? _availableUpdate;
+    private UpdateRelease? _displayedRelease;
     private bool _windowClosed;
+    private bool _updateCheckInProgress;
     private bool _updatingStateEditor;
 
     public SettingsWindow(AppSettings settings, IWindowMemorySource? windowMemorySource = null)
@@ -119,6 +122,7 @@ public partial class SettingsWindow : FluentWindow
         UpdateLivePreview();
         RefreshWindowMemory();
         ShowSettingsPage(Math.Max(0, SettingsNavigation.SelectedIndex));
+        Loaded += OnSettingsWindowLoaded;
     }
 
     public AppSettings Settings { get; private set; }
@@ -126,6 +130,7 @@ public partial class SettingsWindow : FluentWindow
     protected override void OnClosed(EventArgs e)
     {
         _windowClosed = true;
+        Loaded -= OnSettingsWindowLoaded;
         if (_windowMemorySource is not null)
         {
             _windowMemorySource.EntriesChanged -= OnWindowMemoryEntriesChanged;
@@ -209,6 +214,7 @@ public partial class SettingsWindow : FluentWindow
         UpdateStatusText.Text = $"当前版本 v{AppVersion.Display} · Windows x64";
         UpdateActionButton.Content = "检查更新";
         _availableUpdate = null;
+        HideReleaseNotes();
         SelectBackdrop(normalized.SettingsBackdrop);
         ApplyBackdrop(normalized.SettingsBackdrop);
         SelectStyle(normalized.Marker.Style);
@@ -529,9 +535,30 @@ public partial class SettingsWindow : FluentWindow
             return;
         }
 
+        await CheckForUpdatesAsync();
+    }
+
+    private async void OnSettingsWindowLoaded(object sender, RoutedEventArgs e)
+    {
+        Loaded -= OnSettingsWindowLoaded;
+        if (Settings.AutoCheckForUpdates)
+        {
+            await CheckForUpdatesAsync();
+        }
+    }
+
+    private async Task CheckForUpdatesAsync()
+    {
+        if (_updateCheckInProgress || _windowClosed)
+        {
+            return;
+        }
+
+        _updateCheckInProgress = true;
         UpdateActionButton.IsEnabled = false;
         UpdateActionButton.Content = "检查中…";
         UpdateStatusText.Text = "正在连接 GitHub Releases…";
+        HideReleaseNotes();
         try
         {
             CancellationToken cancellationToken = _updateCancellation.Token;
@@ -546,16 +573,19 @@ public partial class SettingsWindow : FluentWindow
                 _availableUpdate = result.Release;
                 UpdateStatusText.Text = $"发现新版本 v{AppVersion.Format(result.Release.Version)}";
                 UpdateActionButton.Content = "下载并安装";
+                ShowReleaseNotes(result.Release);
             }
             else if (result.Availability == UpdateAvailability.NoPublishedRelease)
             {
                 UpdateStatusText.Text = $"当前版本 v{AppVersion.Display}，仓库暂未发布 Release";
                 UpdateActionButton.Content = "重新检查";
+                HideReleaseNotes();
             }
             else
             {
                 UpdateStatusText.Text = $"当前已是最新版本 v{AppVersion.Display}";
                 UpdateActionButton.Content = "重新检查";
+                ShowReleaseNotes(result.Release);
             }
         }
         catch (OperationCanceledException) when (_windowClosed)
@@ -566,9 +596,11 @@ public partial class SettingsWindow : FluentWindow
         {
             UpdateStatusText.Text = $"检查失败：{GetUpdateErrorMessage(exception)}";
             UpdateActionButton.Content = "重试";
+            HideReleaseNotes();
         }
         finally
         {
+            _updateCheckInProgress = false;
             if (!_windowClosed)
             {
                 UpdateActionButton.IsEnabled = true;
@@ -652,6 +684,51 @@ public partial class SettingsWindow : FluentWindow
         if (_isInitialized)
         {
             RefreshWindowMemory();
+        }
+    }
+
+    private void ShowReleaseNotes(UpdateRelease? release)
+    {
+        if (release is null)
+        {
+            HideReleaseNotes();
+            return;
+        }
+
+        _displayedRelease = release;
+        UpdateNotesTitleText.Text = $"v{AppVersion.Format(release.Version)} 更新日志";
+        UpdateNotesDateText.Text = release.PublishedAt is DateTimeOffset publishedAt
+            ? $"发布于 {publishedAt.ToLocalTime():yyyy-MM-dd HH:mm}"
+            : "GitHub Release";
+        UpdateNotesText.Text = string.IsNullOrWhiteSpace(release.ReleaseNotes)
+            ? ReleaseNotesFormatter.FromMarkdown(null)
+            : release.ReleaseNotes;
+        UpdateNotesPanel.Visibility = Visibility.Visible;
+    }
+
+    private void HideReleaseNotes()
+    {
+        _displayedRelease = null;
+        UpdateNotesPanel.Visibility = Visibility.Collapsed;
+    }
+
+    private void OnOpenReleasePageClicked(object sender, RoutedEventArgs e)
+    {
+        if (_displayedRelease is null)
+        {
+            return;
+        }
+
+        try
+        {
+            Process.Start(new ProcessStartInfo(_displayedRelease.ReleasePageUri.AbsoluteUri)
+            {
+                UseShellExecute = true
+            });
+        }
+        catch (Exception exception)
+        {
+            UpdateStatusText.Text = $"打开发布页面失败：{exception.Message}";
         }
     }
 

@@ -362,6 +362,49 @@
                                     Click="OnUpdateActionClicked" />
                         </Grid>
 
+                        <Border x:Name="UpdateNotesPanel"
+                                Margin="60,0,16,14"
+                                Padding="14,12"
+                                Background="{DynamicResource SettingsPreviewBackgroundBrush}"
+                                BorderBrush="{DynamicResource SettingsCardBorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="8"
+                                Visibility="Collapsed">
+                            <StackPanel>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock x:Name="UpdateNotesTitleText"
+                                               VerticalAlignment="Center"
+                                               FontWeight="SemiBold"
+                                               Foreground="#202020" />
+                                    <Button Grid.Column="1"
+                                            Width="112"
+                                            Height="32"
+                                            Content="在 GitHub 查看"
+                                            Click="OnOpenReleasePageClicked" />
+                                </Grid>
+                                <TextBlock x:Name="UpdateNotesDateText"
+                                           Margin="0,3,0,0"
+                                           FontSize="11"
+                                           Foreground="#686868" />
+                                <Border Height="1"
+                                        Margin="0,10,0,10"
+                                        Background="{DynamicResource SettingsDividerBrush}" />
+                                <ScrollViewer MaxHeight="180"
+                                              VerticalScrollBarVisibility="Auto"
+                                              HorizontalScrollBarVisibility="Disabled">
+                                    <TextBlock x:Name="UpdateNotesText"
+                                               Padding="0,0,8,0"
+                                               Foreground="#404040"
+                                               LineHeight="21"
+                                               TextWrapping="Wrap" />
+                                </ScrollViewer>
+                            </StackPanel>
+                        </Border>
+
                         <Border Height="1" Background="{DynamicResource SettingsDividerBrush}" Margin="60,0,0,0" />
 
                         <Grid MinHeight="64" Margin="16,0">

@@ -11,6 +11,7 @@ public sealed class GitHubUpdateServiceTests
         {
           "tag_name": "v1.2.3",
           "html_url": "https://github.com/yixing233/ImeTool/releases/tag/v1.2.3",
+          "published_at": "2026-07-16T09:50:49Z",
           "body": "Release notes",
           "assets": [
             {
@@ -47,6 +48,10 @@ public sealed class GitHubUpdateServiceTests
         Assert.Equal(
             "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF",
             release.Sha256);
+        Assert.Equal("Release notes", release.ReleaseNotes);
+        Assert.Equal(
+            new DateTimeOffset(2026, 7, 16, 9, 50, 49, TimeSpan.Zero),
+            release.PublishedAt);
     }
 
     [Fact]
@@ -145,6 +150,49 @@ public sealed class GitHubUpdateServiceTests
             "https://github.com/yixing233/ImeTool/releases/download/v1.2.3/ImeTool_Windows_x64.exe",
             result.Release?.DownloadUri.AbsoluteUri);
         Assert.DoesNotContain(requestedUris, uri => uri.AbsoluteUri == GitHubUpdateService.LatestReleaseApi);
+    }
+
+    [Fact]
+    public async Task CheckForUpdatesAsync_LoadsReleaseNotesFromAtomFeed()
+    {
+        const string digest = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        const string atom = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <feed xmlns="http://www.w3.org/2005/Atom">
+              <entry>
+                <updated>2026-07-16T09:50:49Z</updated>
+                <link rel="alternate" href="https://github.com/yixing233/ImeTool/releases/tag/v1.2.3" />
+                <content type="html">&lt;h2&gt;更新内容&lt;/h2&gt;&lt;ul&gt;&lt;li&gt;修复状态刷新&lt;/li&gt;&lt;/ul&gt;</content>
+              </entry>
+            </feed>
+            """;
+        using var client = new HttpClient(new RoutingHandler(request =>
+        {
+            if (request.RequestUri!.AbsoluteUri == GitHubUpdateService.LatestReleasePage)
+            {
+                return Response(
+                    HttpStatusCode.OK,
+                    "<html>latest release</html>",
+                    "https://github.com/yixing233/ImeTool/releases/tag/v1.2.3");
+            }
+
+            if (request.RequestUri.AbsoluteUri == GitHubUpdateService.ReleasesAtomFeed)
+            {
+                return Response(HttpStatusCode.OK, atom);
+            }
+
+            return Response(
+                HttpStatusCode.OK,
+                $"<li><a href=\"/yixing233/ImeTool/releases/download/v1.2.3/ImeTool_Windows_x64.exe\">ImeTool_Windows_x64.exe</a><span>sha256:{digest}</span></li>");
+        }));
+        using var service = new GitHubUpdateService(client);
+
+        UpdateCheckResult result = await service.CheckForUpdatesAsync(new Version(1, 0, 0));
+
+        Assert.Equal("更新内容\n\n• 修复状态刷新", result.Release?.ReleaseNotes);
+        Assert.Equal(
+            new DateTimeOffset(2026, 7, 16, 9, 50, 49, TimeSpan.Zero),
+            result.Release?.PublishedAt);
     }
 
     [Fact]

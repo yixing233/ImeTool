@@ -5,6 +5,7 @@ using System.Reflection;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Xml.Linq;
 
 namespace ImeTool.Updates;
 
@@ -21,7 +22,8 @@ public sealed record UpdateRelease(
     Uri DownloadUri,
     string Sha256,
     Uri ReleasePageUri,
-    string ReleaseNotes);
+    string ReleaseNotes,
+    DateTimeOffset? PublishedAt = null);
 
 public sealed record UpdateCheckResult(
     UpdateAvailability Availability,
@@ -92,6 +94,7 @@ public sealed class GitHubUpdateService : IDisposable
 {
     public const string LatestReleasePage = "https://github.com/yixing233/ImeTool/releases/latest";
     public const string LatestReleaseApi = "https://api.github.com/repos/yixing233/ImeTool/releases/latest";
+    public const string ReleasesAtomFeed = "https://github.com/yixing233/ImeTool/releases.atom";
     private const string ReleasesBaseUrl = "https://github.com/yixing233/ImeTool/releases";
     private const int MaxMetadataBytes = 2 * 1024 * 1024;
     private const long MaxExecutableBytes = 512L * 1024 * 1024;
@@ -194,6 +197,9 @@ public sealed class GitHubUpdateService : IDisposable
 
         string expectedAssetPath = $"/yixing233/ImeTool/releases/download/{tagName}/{_assetName}";
         string digest = ParseAssetDigest(html, expectedAssetPath, _assetName);
+        ReleaseMetadata metadata = await TryGetReleaseMetadataFromAtomFeedAsync(
+            tagName,
+            cancellationToken);
 
         var releasePageUri = new Uri($"{ReleasesBaseUrl}/tag/{Uri.EscapeDataString(tagName)}");
         var downloadUri = new Uri(
@@ -204,7 +210,8 @@ public sealed class GitHubUpdateService : IDisposable
             downloadUri,
             digest,
             releasePageUri,
-            string.Empty);
+            metadata.ReleaseNotes ?? string.Empty,
+            metadata.PublishedAt);
     }
 
     private async Task<UpdateRelease?> GetLatestReleaseFromApiAsync(CancellationToken cancellationToken)
@@ -224,6 +231,61 @@ public sealed class GitHubUpdateService : IDisposable
         response.EnsureSuccessStatusCode();
         string json = await ReadLimitedStringAsync(response.Content, cancellationToken);
         return ParseRelease(json);
+    }
+
+    private async Task<ReleaseMetadata> TryGetReleaseMetadataFromAtomFeedAsync(
+        string tagName,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, ReleasesAtomFeed);
+            request.Headers.Accept.ParseAdd("application/atom+xml");
+            using HttpResponseMessage response = await _httpClient.SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken);
+            response.EnsureSuccessStatusCode();
+            string xml = await ReadLimitedStringAsync(response.Content, cancellationToken);
+            return ParseReleaseMetadataFromAtom(xml, tagName);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            // Release discovery and installer digest validation remain useful
+            // when GitHub's optional Atom feed is temporarily unavailable.
+            return default;
+        }
+    }
+
+    private static ReleaseMetadata ParseReleaseMetadataFromAtom(string xml, string tagName)
+    {
+        XDocument document = XDocument.Parse(xml, LoadOptions.None);
+        XNamespace atom = "http://www.w3.org/2005/Atom";
+        string expectedPath = $"/yixing233/ImeTool/releases/tag/{tagName}";
+        XElement? entry = document.Root?
+            .Elements(atom + "entry")
+            .FirstOrDefault(candidate => candidate
+                .Elements(atom + "link")
+                .Any(link =>
+                    string.Equals((string?)link.Attribute("rel"), "alternate", StringComparison.OrdinalIgnoreCase) &&
+                    Uri.TryCreate((string?)link.Attribute("href"), UriKind.Absolute, out Uri? uri) &&
+                    string.Equals(uri.AbsolutePath, expectedPath, StringComparison.OrdinalIgnoreCase)));
+        if (entry is null)
+        {
+            return default;
+        }
+
+        string notes = ReleaseNotesFormatter.FromHtml(entry.Element(atom + "content")?.Value);
+        DateTimeOffset? publishedAt = DateTimeOffset.TryParse(
+            entry.Element(atom + "updated")?.Value,
+            out DateTimeOffset parsed)
+            ? parsed.ToUniversalTime()
+            : null;
+        return new ReleaseMetadata(notes, publishedAt);
     }
 
     private static string ParseTagFromReleaseUri(Uri releaseUri)
@@ -433,9 +495,14 @@ public sealed class GitHubUpdateService : IDisposable
         }
 
         string releasePage = root.GetProperty("html_url").GetString() ?? string.Empty;
-        string notes = root.TryGetProperty("body", out JsonElement body)
-            ? body.GetString() ?? string.Empty
-            : string.Empty;
+        string notes = ReleaseNotesFormatter.FromMarkdown(
+            root.TryGetProperty("body", out JsonElement body)
+                ? body.GetString()
+                : null);
+        DateTimeOffset? publishedAt = root.TryGetProperty("published_at", out JsonElement publishedElement) &&
+                                      DateTimeOffset.TryParse(publishedElement.GetString(), out DateTimeOffset parsedPublishedAt)
+            ? parsedPublishedAt.ToUniversalTime()
+            : null;
         Uri? downloadUri = null;
         string? sha256 = null;
         foreach (JsonElement asset in root.GetProperty("assets").EnumerateArray())
@@ -458,7 +525,8 @@ public sealed class GitHubUpdateService : IDisposable
             downloadUri ?? throw new InvalidDataException($"Release 缺少 {AppPackage.UpdateAssetName}。"),
             sha256 ?? throw new InvalidDataException("Release 资源缺少 SHA-256 digest。"),
             CreateAbsoluteUri(releasePage),
-            notes);
+            notes,
+            publishedAt);
     }
 
     public static string ParseDigest(string content)
@@ -500,6 +568,10 @@ public sealed class GitHubUpdateService : IDisposable
         Uri.TryCreate(value, UriKind.Absolute, out Uri? uri)
             ? uri
             : throw new InvalidDataException("GitHub Release 包含无效下载地址。");
+
+    private readonly record struct ReleaseMetadata(
+        string? ReleaseNotes,
+        DateTimeOffset? PublishedAt);
 
     public void Dispose()
     {
