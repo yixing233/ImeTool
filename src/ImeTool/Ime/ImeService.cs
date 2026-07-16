@@ -18,6 +18,7 @@ public sealed class ImeService : IImeService, IDisposable
 {
     private const uint ImeMessageTimeoutMilliseconds = 25;
     private readonly ITsfImeService _tsfService;
+    private readonly ImeModeSignalTracker _modeSignalTracker = new();
 
     public ImeService()
         : this(new TsfImeService())
@@ -50,33 +51,38 @@ public sealed class ImeService : IImeService, IDisposable
         }
 
         bool isChineseInputMethod = TsfImeService.IsChineseInputMethod(hwnd);
-        if (isChineseInputMethod &&
-            TryGetConversionModeFromDefaultImeWindow(hwnd, out uint defaultImeConversionMode))
+        ImeOpenStatus defaultImeOpenStatus = ImeOpenStatus.Unknown;
+        uint defaultImeConversionMode = 0;
+        bool defaultImeOpenStatusKnown = false;
+        bool defaultImeConversionKnown = false;
+        if (isChineseInputMethod)
         {
-            return TextInputModeReadingResolver.Resolve(
-                isChineseInputMethod: true,
-                defaultImeConversionKnown: true,
-                defaultImeConversionMode: defaultImeConversionMode,
-                contextMode: TextInputMode.Unknown,
-                openStatus: ImeOpenStatus.Unknown);
+            defaultImeOpenStatus = GetOpenStatusFromDefaultImeWindow(hwnd);
+            defaultImeOpenStatusKnown = defaultImeOpenStatus != ImeOpenStatus.Unknown;
+            defaultImeConversionKnown =
+                TryGetConversionModeFromDefaultImeWindow(hwnd, out defaultImeConversionMode);
         }
 
-        if (TryGetInputModeFromContext(hwnd, out TextInputMode mode))
-        {
-            return TextInputModeReadingResolver.Resolve(
-                isChineseInputMethod,
-                defaultImeConversionKnown: false,
-                defaultImeConversionMode: 0,
-                contextMode: mode,
-                openStatus: ImeOpenStatus.Unknown);
-        }
-
-        return TextInputModeReadingResolver.Resolve(
+        _ = TryGetInputModeFromContext(hwnd, out TextInputMode contextMode);
+        ImeOpenStatus openStatus = defaultImeOpenStatusKnown
+            ? defaultImeOpenStatus
+            : GetOpenStatus(hwnd);
+        TextInputMode fallbackMode = TextInputModeReadingResolver.Resolve(
             isChineseInputMethod,
-            defaultImeConversionKnown: false,
-            defaultImeConversionMode: 0,
-            contextMode: TextInputMode.Unknown,
-            openStatus: GetOpenStatus(hwnd));
+            defaultImeConversionKnown,
+            defaultImeConversionMode,
+            contextMode,
+            openStatus);
+
+        return isChineseInputMethod
+            ? _modeSignalTracker.Resolve(
+                hwnd,
+                defaultImeOpenStatusKnown,
+                defaultImeOpenStatus,
+                defaultImeConversionKnown,
+                defaultImeConversionMode,
+                fallbackMode)
+            : fallbackMode;
     }
 
     public bool SetOpenStatus(IntPtr hwnd, bool isOpen)

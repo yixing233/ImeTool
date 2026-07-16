@@ -44,7 +44,6 @@ public static class MarkerStateResolver
 
 public interface ICapsLockService
 {
-    event EventHandler? InputModeToggleRequested;
     bool IsCapsLockOn();
 }
 
@@ -55,8 +54,6 @@ public sealed class CapsLockService : ICapsLockService, IDisposable
     private bool _isCapsLockOn;
     private bool _capsKeyDown;
     private bool _disposed;
-    private readonly StandaloneShiftDetector _shiftDetector = new();
-    private readonly ControlSpaceDetector _controlSpaceDetector = new();
 
     public CapsLockService()
     {
@@ -78,8 +75,6 @@ public sealed class CapsLockService : ICapsLockService, IDisposable
         ? _isCapsLockOn
         : (NativeMethods.GetKeyState(NativeMethods.VkCapital) & 0x0001) != 0;
 
-    public event EventHandler? InputModeToggleRequested;
-
     private IntPtr OnLowLevelKeyboard(int nCode, IntPtr wParam, IntPtr lParam)
     {
         if (nCode >= 0)
@@ -91,8 +86,6 @@ public sealed class CapsLockService : ICapsLockService, IDisposable
             }
 
             int message = wParam.ToInt32();
-            bool isKeyDown = message is NativeMethods.WmKeyDown or NativeMethods.WmSysKeyDown;
-            bool isKeyUp = message is NativeMethods.WmKeyUp or NativeMethods.WmSysKeyUp;
             if (key.vkCode == NativeMethods.VkCapital)
             {
                 if ((message == NativeMethods.WmKeyDown || message == NativeMethods.WmSysKeyDown) && !_capsKeyDown)
@@ -104,25 +97,6 @@ public sealed class CapsLockService : ICapsLockService, IDisposable
                 else if (message == NativeMethods.WmKeyUp || message == NativeMethods.WmSysKeyUp)
                 {
                     _capsKeyDown = false;
-                }
-            }
-
-            if (isKeyDown || isKeyUp)
-            {
-                bool shiftToggle = _shiftDetector.Process(
-                    key.vkCode,
-                    isKeyDown,
-                    Environment.TickCount64);
-                bool controlSpaceToggle = _controlSpaceDetector.Process(
-                    key.vkCode,
-                    isKeyDown);
-                if (shiftToggle || controlSpaceToggle)
-                {
-                    DiagnosticsLog.Write(
-                        shiftToggle
-                            ? "Standalone Shift input-mode toggle detected."
-                            : "Control+Space input-mode toggle detected.");
-                    InputModeToggleRequested?.Invoke(this, EventArgs.Empty);
                 }
             }
         }

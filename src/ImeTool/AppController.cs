@@ -40,8 +40,6 @@ public sealed class AppController : IDisposable
     private ApplicationRuleMatcher _applicationRuleMatcher;
     private bool _markerTemporarilyHidden;
     private bool _settingsWindowOpen;
-    private WindowKey? _activeInputWindow;
-    private IntPtr _activeFocusHwnd;
     private bool _disposed;
 
     public AppController()
@@ -90,7 +88,6 @@ public sealed class AppController : IDisposable
         _trayIcon.SettingsRequested += OnSettingsRequested;
         _trayIcon.ExitRequested += OnExitRequested;
         _globalHotkeys.CommandInvoked += OnGlobalHotkeyCommand;
-        _capsLockService.InputModeToggleRequested += OnInputModeToggleRequested;
         _globalHotkeys.SetSettings(_settings.Hotkeys);
 
         _timer = new DispatcherTimer
@@ -157,7 +154,6 @@ public sealed class AppController : IDisposable
     {
         System.Windows.Application.Current.Dispatcher.BeginInvoke(() =>
         {
-            ClearActiveInputTarget();
             _caretService.Invalidate();
             _caretStabilizer.Reset();
             _markerVisibility.Reset();
@@ -175,7 +171,6 @@ public sealed class AppController : IDisposable
         if (!_settings.Enabled)
         {
             DiagnosticsLog.WriteThrottled("Marker hidden: app disabled.");
-            ClearActiveInputTarget();
             _markerVisibility.Reset();
             _overlay.HideMarker();
             return;
@@ -186,7 +181,6 @@ public sealed class AppController : IDisposable
 
         if (!_caretService.TryGetCaret(out CaretSnapshot caret))
         {
-            ClearActiveInputTarget();
             _caretStabilizer.Reset();
             _markerVisibility.Reset();
             string reason = _caretService.LastFailureReason ?? "no caret from GetGUIThreadInfo or UI Automation";
@@ -200,7 +194,6 @@ public sealed class AppController : IDisposable
         NativeMethods.GetWindowThreadProcessId(caret.FocusHwnd, out uint focusProcessId);
         if (focusProcessId == Environment.ProcessId)
         {
-            ClearActiveInputTarget();
             DiagnosticsLog.WriteThrottled("Marker hidden: focus belongs to ImeTool.");
             _markerVisibility.Reset();
             _overlay.HideMarker();
@@ -214,7 +207,6 @@ public sealed class AppController : IDisposable
             bool isMinimized = _windowInfoService.IsIconic(key.Hwnd);
             if (!isVisible || isMinimized)
             {
-                ClearActiveInputTarget();
                 DiagnosticsLog.WriteThrottled($"Marker hidden: window not visible or minimized {key}.");
                 _markerVisibility.Reset();
                 _overlay.HideMarker();
@@ -224,7 +216,6 @@ public sealed class AppController : IDisposable
             ApplicationRuleMatch rule = GetApplicationRule(key.ProcessId);
             if (rule.Excluded)
             {
-                ClearActiveInputTarget();
                 DiagnosticsLog.WriteThrottled($"Marker hidden: application excluded by rule for {key}.");
                 _markerVisibility.Reset();
                 _overlay.HideMarker();
@@ -248,11 +239,6 @@ public sealed class AppController : IDisposable
                 }
             }
         }
-        else
-        {
-            ClearActiveInputTarget();
-        }
-
         ImeOpenStatus status = _focusTracker.UpdateCurrentImeState(caret.FocusHwnd);
         if (status == ImeOpenStatus.Unknown)
         {
@@ -282,8 +268,6 @@ public sealed class AppController : IDisposable
                 }
             }
 
-            _activeInputWindow = key;
-            _activeFocusHwnd = caret.FocusHwnd;
         }
 
         if (inputMode == TextInputMode.Unknown)
@@ -505,41 +489,10 @@ public sealed class AppController : IDisposable
         }
     }
 
-    private void OnInputModeToggleRequested(object? sender, EventArgs e)
-    {
-        System.Windows.Application.Current.Dispatcher.BeginInvoke(DispatcherPriority.Input, () =>
-        {
-            if (!_settings.Enabled ||
-                _activeInputWindow is not WindowKey activeWindow ||
-                _activeFocusHwnd == IntPtr.Zero ||
-                !TsfImeService.IsChineseInputMethod(_activeFocusHwnd))
-            {
-                return;
-            }
-
-            TextInputMode reportedMode = _imeService.GetInputMode(_activeFocusHwnd);
-            TextInputMode mode = _inferredInputModeTracker.ObserveToggle(
-                activeWindow,
-                reportedMode);
-            if (mode != TextInputMode.Unknown)
-            {
-                DiagnosticsLog.Write(
-                    $"Input mode toggle observed: window={activeWindow}, reported={reportedMode}, effective={mode}.");
-                OnTimerTick(this, EventArgs.Empty);
-            }
-        });
-    }
-
     private void OnFallbackInputModeApplied(WindowKey key, TextInputMode mode)
     {
         _inferredInputModeTracker.SetEffectiveMode(key, mode);
         DiagnosticsLog.Write($"Input mode inference aligned with automatic restore: window={key}, mode={mode}.");
-    }
-
-    private void ClearActiveInputTarget()
-    {
-        _activeInputWindow = null;
-        _activeFocusHwnd = IntPtr.Zero;
     }
 
     private void OnExitRequested(object? sender, EventArgs e)
@@ -560,7 +513,6 @@ public sealed class AppController : IDisposable
         _timer.Stop();
         _eventHook.Dispose();
         _focusTracker.FallbackInputModeApplied -= OnFallbackInputModeApplied;
-        _capsLockService.InputModeToggleRequested -= OnInputModeToggleRequested;
         _globalHotkeys.Dispose();
         _updateService.Dispose();
         _updateCancellation.Dispose();
