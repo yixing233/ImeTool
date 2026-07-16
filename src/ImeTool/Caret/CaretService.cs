@@ -513,8 +513,23 @@ public sealed class CaretService : ICaretService, IDisposable
         }
 
         TextPatternRange collapsed = selections[0].Clone();
-        if (TryGetRangeRect(collapsed, out rect) ||
-            TryGetAdjacentCharacterCaret(collapsed, out rect))
+        if (TryGetAdjacentCharacterCaret(collapsed, out NativeMethods.RECT adjacent) &&
+            TextPatternCaretPolicy.TrySelectCaretRect(
+                adjacent,
+                collapsedRect: null,
+                out rect))
+        {
+            return true;
+        }
+
+        NativeMethods.RECT? collapsedRect =
+            TryGetRangeRect(collapsed, out NativeMethods.RECT collapsedCandidate)
+                ? collapsedCandidate
+                : null;
+        if (TextPatternCaretPolicy.TrySelectCaretRect(
+                adjacentCharacterRect: null,
+                collapsedRect: collapsedRect,
+                out rect))
         {
             return true;
         }

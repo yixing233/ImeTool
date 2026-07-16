@@ -35,6 +35,7 @@ public static class NativeMethods
     public const int WmSysKeyDown = 0x0104;
     public const int WmSysKeyUp = 0x0105;
     public const int MaNoActivate = 3;
+    public const int ImcGetConversionMode = 0x0001;
     public const int ImcGetOpenStatus = 0x0005;
     public const int ImcSetOpenStatus = 0x0006;
     public const uint ImeCmodeNative = 0x0001;

@@ -36,4 +36,56 @@ public sealed class TextInputModeResolverTests
             TextInputMode.Chinese,
             TextInputModeResolver.Resolve(ImeOpenStatus.Open, conversionModeKnown: false, 0));
     }
+
+    [Fact]
+    public void Default_Ime_Native_Conversion_Wins_Over_A_Stale_English_Context()
+    {
+        Assert.Equal(
+            TextInputMode.Chinese,
+            TextInputModeReadingResolver.Resolve(
+                isChineseInputMethod: true,
+                defaultImeConversionKnown: true,
+                defaultImeConversionMode: NativeMethods.ImeCmodeNative,
+                contextMode: TextInputMode.English,
+                openStatus: ImeOpenStatus.Closed));
+    }
+
+    [Fact]
+    public void Default_Ime_Alphanumeric_Conversion_Wins_Over_A_Stale_Chinese_Context()
+    {
+        Assert.Equal(
+            TextInputMode.English,
+            TextInputModeReadingResolver.Resolve(
+                isChineseInputMethod: true,
+                defaultImeConversionKnown: true,
+                defaultImeConversionMode: 0,
+                contextMode: TextInputMode.Chinese,
+                openStatus: ImeOpenStatus.Open));
+    }
+
+    [Fact]
+    public void Non_Chinese_Layout_Ignores_Default_Ime_Conversion()
+    {
+        Assert.Equal(
+            TextInputMode.English,
+            TextInputModeReadingResolver.Resolve(
+                isChineseInputMethod: false,
+                defaultImeConversionKnown: true,
+                defaultImeConversionMode: NativeMethods.ImeCmodeNative,
+                contextMode: TextInputMode.English,
+                openStatus: ImeOpenStatus.Closed));
+    }
+
+    [Fact]
+    public void Missing_Default_Ime_Conversion_Uses_Context_Mode()
+    {
+        Assert.Equal(
+            TextInputMode.Chinese,
+            TextInputModeReadingResolver.Resolve(
+                isChineseInputMethod: true,
+                defaultImeConversionKnown: false,
+                defaultImeConversionMode: 0,
+                contextMode: TextInputMode.Chinese,
+                openStatus: ImeOpenStatus.Closed));
+    }
 }

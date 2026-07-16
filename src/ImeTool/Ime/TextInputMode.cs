@@ -36,3 +36,32 @@ public static class TextInputModeResolver
             : TextInputMode.English;
     }
 }
+
+public static class TextInputModeReadingResolver
+{
+    public static TextInputMode Resolve(
+        bool isChineseInputMethod,
+        bool defaultImeConversionKnown,
+        uint defaultImeConversionMode,
+        TextInputMode contextMode,
+        ImeOpenStatus openStatus)
+    {
+        // Modern TSF applications can expose a stale IMM context while the
+        // default IME window still reports the mode shown by the system tray.
+        if (isChineseInputMethod && defaultImeConversionKnown)
+        {
+            return (defaultImeConversionMode & NativeMethods.ImeCmodeNative) != 0
+                ? TextInputMode.Chinese
+                : TextInputMode.English;
+        }
+
+        if (contextMode != TextInputMode.Unknown)
+        {
+            return contextMode;
+        }
+
+        return openStatus == ImeOpenStatus.Closed
+            ? TextInputMode.English
+            : TextInputMode.Unknown;
+    }
+}

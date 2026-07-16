@@ -49,14 +49,34 @@ public sealed class ImeService : IImeService, IDisposable
             return TextInputMode.Unknown;
         }
 
-        if (TryGetInputModeFromContext(hwnd, out TextInputMode mode))
+        bool isChineseInputMethod = TsfImeService.IsChineseInputMethod(hwnd);
+        if (isChineseInputMethod &&
+            TryGetConversionModeFromDefaultImeWindow(hwnd, out uint defaultImeConversionMode))
         {
-            return mode;
+            return TextInputModeReadingResolver.Resolve(
+                isChineseInputMethod: true,
+                defaultImeConversionKnown: true,
+                defaultImeConversionMode: defaultImeConversionMode,
+                contextMode: TextInputMode.Unknown,
+                openStatus: ImeOpenStatus.Unknown);
         }
 
-        return GetOpenStatus(hwnd) == ImeOpenStatus.Closed
-            ? TextInputMode.English
-            : TextInputMode.Unknown;
+        if (TryGetInputModeFromContext(hwnd, out TextInputMode mode))
+        {
+            return TextInputModeReadingResolver.Resolve(
+                isChineseInputMethod,
+                defaultImeConversionKnown: false,
+                defaultImeConversionMode: 0,
+                contextMode: mode,
+                openStatus: ImeOpenStatus.Unknown);
+        }
+
+        return TextInputModeReadingResolver.Resolve(
+            isChineseInputMethod,
+            defaultImeConversionKnown: false,
+            defaultImeConversionMode: 0,
+            contextMode: TextInputMode.Unknown,
+            openStatus: GetOpenStatus(hwnd));
     }
 
     public bool SetOpenStatus(IntPtr hwnd, bool isOpen)
@@ -171,6 +191,42 @@ public sealed class ImeService : IImeService, IDisposable
         {
             Debug.WriteLine($"Default IME window get status failed for 0x{hwnd.ToInt64():X}: {ex}");
             return ImeOpenStatus.Unknown;
+        }
+    }
+
+    private static bool TryGetConversionModeFromDefaultImeWindow(
+        IntPtr hwnd,
+        out uint conversionMode)
+    {
+        conversionMode = 0;
+        try
+        {
+            IntPtr imeWindow = NativeMethods.ImmGetDefaultIMEWnd(hwnd);
+            if (imeWindow == IntPtr.Zero)
+            {
+                return false;
+            }
+
+            IntPtr sent = NativeMethods.SendMessageTimeout(
+                imeWindow,
+                NativeMethods.WmImeControl,
+                NativeMethods.ImcGetConversionMode,
+                IntPtr.Zero,
+                NativeMethods.SmtoAbortIfHung,
+                ImeMessageTimeoutMilliseconds,
+                out IntPtr result);
+            if (sent == IntPtr.Zero)
+            {
+                return false;
+            }
+
+            conversionMode = unchecked((uint)result.ToInt64());
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Default IME window conversion-mode read failed for 0x{hwnd.ToInt64():X}: {ex}");
+            return false;
         }
     }
 
