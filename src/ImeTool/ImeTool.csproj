@@ -12,7 +12,7 @@
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
     <AssemblyName>ImeTool</AssemblyName>
     <RootNamespace>ImeTool</RootNamespace>
-    <Version>1.0.19</Version>
+    <Version>1.0.20</Version>
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>false</SelfContained>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
@@ -26,6 +26,7 @@
 
   <ItemGroup>
     <Resource Include="Assets\AppIcon.ico" />
+    <EmbeddedResource Include="..\..\CHANGELOG.md" LogicalName="ImeTool.CHANGELOG.md" />
     <AssemblyMetadata Include="UpdateAssetName" Value="$(UpdateAssetName)" />
   </ItemGroup>
 </Project>

@@ -347,7 +347,7 @@
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="44" />
                                 <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="104" />
+                                <ColumnDefinition Width="216" />
                             </Grid.ColumnDefinitions>
                             <ui:SymbolIcon Symbol="ArrowDownload24" Style="{StaticResource RowIconStyle}" />
                             <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="8,0,16,0">
@@ -355,11 +355,18 @@
                                 <TextBlock x:Name="UpdateStatusText" Text="检查 GitHub Releases 上的最新版本"
                                            Style="{StaticResource RowDescriptionStyle}" />
                             </StackPanel>
-                            <Button x:Name="UpdateActionButton"
-                                    Grid.Column="2"
-                                    Content="检查更新"
-                                    Style="{StaticResource InlineActionButtonStyle}"
-                                    Click="OnUpdateActionClicked" />
+                            <StackPanel Grid.Column="2" Orientation="Horizontal">
+                                <Button Width="104"
+                                        Margin="0,0,8,0"
+                                        Content="历史版本"
+                                        Style="{StaticResource InlineActionButtonStyle}"
+                                        Click="OnOpenReleaseHistoryClicked" />
+                                <Button x:Name="UpdateActionButton"
+                                        Width="104"
+                                        Content="检查更新"
+                                        Style="{StaticResource InlineActionButtonStyle}"
+                                        Click="OnUpdateActionClicked" />
+                            </StackPanel>
                         </Grid>
 
                         <Border x:Name="UpdateNotesPanel"
@@ -381,7 +388,7 @@
                                                FontWeight="SemiBold"
                                                Foreground="#202020" />
                                     <Button Grid.Column="1"
-                                            Width="112"
+                                            Width="128"
                                             Height="32"
                                             Content="在 GitHub 查看"
                                             Click="OnOpenReleasePageClicked" />

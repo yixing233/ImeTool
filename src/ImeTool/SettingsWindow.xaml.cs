@@ -732,6 +732,16 @@ public partial class SettingsWindow : FluentWindow
         }
     }
 
+    private void OnOpenReleaseHistoryClicked(object sender, RoutedEventArgs e)
+    {
+        IReadOnlyList<ReleaseHistoryEntry> entries = ReleaseHistoryCatalog.LoadBundled();
+        var window = new ReleaseHistoryWindow(entries, SelectedBackdrop())
+        {
+            Owner = this
+        };
+        window.ShowDialog();
+    }
+
     private void OnWindowMemoryPersistenceChanged(object sender, RoutedEventArgs e)
     {
         if (_isInitialized)
