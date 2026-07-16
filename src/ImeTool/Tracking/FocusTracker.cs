@@ -15,6 +15,7 @@ public sealed class FocusTracker
     private readonly WindowStateStore _stateStore;
     private readonly IWindowInfoService _windowInfo;
     private readonly Func<WindowKey, bool> _canTrackState;
+    private readonly Func<WindowKey, bool> _canRestoreState;
     private readonly Func<DateTimeOffset> _nowProvider;
 
     private WindowKey? _currentWindow;
@@ -36,12 +37,14 @@ public sealed class FocusTracker
         WindowStateStore stateStore,
         IWindowInfoService windowInfo,
         Func<WindowKey, bool>? canTrackState = null,
+        Func<WindowKey, bool>? canRestoreState = null,
         Func<DateTimeOffset>? nowProvider = null)
     {
         _imeService = imeService;
         _stateStore = stateStore;
         _windowInfo = windowInfo;
         _canTrackState = canTrackState ?? (_ => true);
+        _canRestoreState = canRestoreState ?? _canTrackState;
         _nowProvider = nowProvider ?? (() => DateTimeOffset.UtcNow);
     }
 
@@ -77,7 +80,7 @@ public sealed class FocusTracker
     {
         if (!_windowInfo.TryGetWindowKey(focusedHwnd, out WindowKey key) ||
             _currentWindow != key ||
-            !_canTrackState(key) ||
+            !_canRestoreState(key) ||
             _pendingRestoreState.HasValue ||
             !_stateStore.TryGet(key, out bool savedIsOpen))
         {
@@ -100,7 +103,7 @@ public sealed class FocusTracker
         if (_currentWindow == newWindow)
         {
             _currentFocusHwnd = focusedHwnd;
-            if (!_canTrackState(newWindow))
+            if (!_canRestoreState(newWindow))
             {
                 PreserveUnverifiedFallbackForCurrentWindow();
                 ClearPendingRestore();
@@ -124,7 +127,7 @@ public sealed class FocusTracker
         _lastObservedModeWindow = null;
         _lastObservedMode = TextInputMode.Unknown;
 
-        if (_canTrackState(newWindow) && _stateStore.TryGet(newWindow, out bool savedIsOpen))
+        if (_canRestoreState(newWindow) && _stateStore.TryGet(newWindow, out bool savedIsOpen))
         {
             BeginPendingRestore(savedIsOpen);
             TryRestorePendingState(focusedHwnd, canConfirmInputMode: false);
@@ -145,7 +148,7 @@ public sealed class FocusTracker
         else
         {
             _currentFocusHwnd = focusedHwnd;
-            if (_canTrackState(key))
+            if (_canRestoreState(key))
             {
                 TryRestorePendingState(focusedHwnd, canConfirmInputMode: true);
             }

@@ -1,3 +1,4 @@
+using ImeTool.Ime;
 using ImeTool.Settings;
 
 namespace ImeTool.Tests.Settings;
@@ -101,6 +102,16 @@ public sealed class SettingsServiceTests
             [
                 new ApplicationRule { ProcessName = "Chrome.exe", Excluded = true },
                 new ApplicationRule { ProcessName = "Code", DisableStateRestore = true }
+            ],
+            ImeDetectionRules =
+            [
+                new ImeDetectionRule
+                {
+                    KeyboardLayout = "0x8040804",
+                    OpenStatusCode = 1,
+                    ConversionMode = 1025,
+                    Result = TextInputMode.Chinese
+                }
             ]
         };
 
@@ -115,9 +126,14 @@ public sealed class SettingsServiceTests
         Assert.Equal(180, actual.MarkerBehavior.FollowAnimationDurationMilliseconds);
         Assert.False(actual.MarkerBehavior.EnableFadeAnimation);
         Assert.Equal(2, actual.ApplicationRules.Count);
-        Assert.Contains(actual.ApplicationRules, rule => rule.ProcessName == "Chrome" && rule.Excluded);
+        Assert.Contains(actual.ApplicationRules, rule =>
+            rule.ProcessName == "Chrome" && rule.HideMarker &&
+            rule.DisableWindowMemory && rule.DisableStateRestore);
         Assert.Contains(actual.ApplicationRules, rule => rule.ProcessName == "Code" && rule.DisableStateRestore);
-        Assert.Equal(12, actual.SettingsVersion);
+        ImeDetectionRule detectionRule = Assert.Single(actual.ImeDetectionRules);
+        Assert.Equal("0x0000000008040804", detectionRule.KeyboardLayout);
+        Assert.Equal(TextInputMode.Chinese, detectionRule.Result);
+        Assert.Equal(14, actual.SettingsVersion);
     }
 
     [Fact]
@@ -142,6 +158,44 @@ public sealed class SettingsServiceTests
         Assert.Equal(300, settings.MarkerBehavior.FollowAnimationDurationMilliseconds);
         Assert.Single(settings.ApplicationRules);
         Assert.Equal("valid", settings.ApplicationRules[0].ProcessName);
+    }
+
+    [Fact]
+    public void Save_Then_Load_RoundTrips_Advanced_Application_Rule()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        string path = Path.Combine(directory, "settings.json");
+        var service = new SettingsService(path);
+
+        service.Save(new AppSettings
+        {
+            ApplicationRules =
+            [
+                new ApplicationRule
+                {
+                    ProcessName = "Telegram.exe",
+                    WindowTitleContains = "Chat",
+                    WindowClass = "QtWindow",
+                    ControlClass = "InputControl",
+                    HideMarker = true,
+                    DisableWindowMemory = false,
+                    DisableStateRestore = true,
+                    OffsetX = 12,
+                    OffsetY = -4
+                }
+            ]
+        });
+
+        ApplicationRule rule = Assert.Single(service.Load().ApplicationRules);
+        Assert.Equal("Telegram", rule.ProcessName);
+        Assert.Equal("Chat", rule.WindowTitleContains);
+        Assert.Equal("QtWindow", rule.WindowClass);
+        Assert.Equal("InputControl", rule.ControlClass);
+        Assert.True(rule.HideMarker);
+        Assert.False(rule.DisableWindowMemory);
+        Assert.True(rule.DisableStateRestore);
+        Assert.Equal(12, rule.OffsetX);
+        Assert.Equal(-4, rule.OffsetY);
     }
 
     [Fact]
@@ -213,7 +267,7 @@ public sealed class SettingsServiceTests
         AppSettings actual = service.Load();
 
         Assert.True(actual.AutoCheckForUpdates);
-        Assert.Equal(12, actual.SettingsVersion);
+        Assert.Equal(14, actual.SettingsVersion);
 
     }
 

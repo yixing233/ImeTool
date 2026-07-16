@@ -84,6 +84,44 @@ internal sealed record WindowMemoryListItem(
     }
 }
 
+internal sealed record ImeDetectionRuleListItem(ImeDetectionRule Rule)
+{
+    public string SignalText => $"{Rule.KeyboardLayout} · open={Rule.OpenStatusCode?.ToString() ?? "*"} · conversion={Rule.ConversionMode?.ToString() ?? "*"}";
+    public string DetailText => "匹配键盘布局和输入法原始状态码";
+    public string ResultText => Rule.Result == TextInputMode.Chinese ? "中文" : "英文";
+}
+
+internal sealed record ApplicationRuleListItem(ApplicationRule Rule)
+{
+    public string MatchText
+    {
+        get
+        {
+            var parts = new List<string> { $"{Rule.ProcessName}.exe" };
+            if (!string.IsNullOrEmpty(Rule.WindowTitleContains)) parts.Add($"标题含“{Rule.WindowTitleContains}”");
+            if (!string.IsNullOrEmpty(Rule.WindowClass)) parts.Add($"窗口类 {Rule.WindowClass}");
+            if (!string.IsNullOrEmpty(Rule.ControlClass)) parts.Add($"控件类 {Rule.ControlClass}");
+            return string.Join(" · ", parts);
+        }
+    }
+
+    public string ActionText
+    {
+        get
+        {
+            var actions = new List<string>();
+            if (Rule.HideMarker) actions.Add("隐藏标记");
+            if (Rule.DisableWindowMemory) actions.Add("禁用记忆");
+            if (Rule.DisableStateRestore) actions.Add("禁止恢复");
+            return actions.Count == 0 ? "仅调整位置" : string.Join(" · ", actions);
+        }
+    }
+
+    public string OffsetText => Rule.OffsetX is null && Rule.OffsetY is null
+        ? string.Empty
+        : $"偏移 {Rule.OffsetX?.ToString() ?? "—"}, {Rule.OffsetY?.ToString() ?? "—"}";
+}
+
 public partial class SettingsWindow : FluentWindow
 {
     private bool _isInitialized;
@@ -93,6 +131,9 @@ public partial class SettingsWindow : FluentWindow
     private readonly Dictionary<MarkerState, StateAppearanceDraft> _stateDrafts = new();
     private readonly WindowDiscoveryService _windowDiscoveryService = new();
     private readonly IWindowMemorySource? _windowMemorySource;
+    private readonly IImeDiagnosticsSource? _imeDiagnosticsSource;
+    private readonly List<ImeDetectionRule> _imeDetectionRules = [];
+    private readonly List<ApplicationRule> _advancedApplicationRules = [];
     private readonly GitHubUpdateService _updateService = new();
     private readonly CancellationTokenSource _updateCancellation = new();
     private MarkerState _stateEditorState = MarkerState.Chinese;
@@ -102,15 +143,23 @@ public partial class SettingsWindow : FluentWindow
     private bool _updateCheckInProgress;
     private bool _updatingStateEditor;
 
-    public SettingsWindow(AppSettings settings, IWindowMemorySource? windowMemorySource = null)
+    public SettingsWindow(
+        AppSettings settings,
+        IWindowMemorySource? windowMemorySource = null,
+        IImeDiagnosticsSource? imeDiagnosticsSource = null)
     {
         InitializeComponent();
         SettingsScroll.Resources[SystemParameters.VerticalScrollBarWidthKey] = 8d;
 
         _windowMemorySource = windowMemorySource;
+        _imeDiagnosticsSource = imeDiagnosticsSource;
         if (_windowMemorySource is not null)
         {
             _windowMemorySource.EntriesChanged += OnWindowMemoryEntriesChanged;
+        }
+        if (_imeDiagnosticsSource is not null)
+        {
+            _imeDiagnosticsSource.SnapshotChanged += OnImeDiagnosticsChanged;
         }
 
         Settings = settings.Normalize();
@@ -121,6 +170,7 @@ public partial class SettingsWindow : FluentWindow
         _isInitialized = true;
         UpdateLivePreview();
         RefreshWindowMemory();
+        RefreshImeDiagnostics();
         ShowSettingsPage(Math.Max(0, SettingsNavigation.SelectedIndex));
         Loaded += OnSettingsWindowLoaded;
     }
@@ -134,6 +184,10 @@ public partial class SettingsWindow : FluentWindow
         if (_windowMemorySource is not null)
         {
             _windowMemorySource.EntriesChanged -= OnWindowMemoryEntriesChanged;
+        }
+        if (_imeDiagnosticsSource is not null)
+        {
+            _imeDiagnosticsSource.SnapshotChanged -= OnImeDiagnosticsChanged;
         }
 
         _updateCancellation.Cancel();
@@ -244,8 +298,18 @@ public partial class SettingsWindow : FluentWindow
         FadeAnimationBox.IsChecked = normalized.MarkerBehavior.EnableFadeAnimation;
         GlobalHotkeysBox.IsChecked = normalized.Hotkeys.Enabled;
         LoadHotkeyBindings(normalized.Hotkeys);
-        ExcludedProcessNamesBox.Text = JoinProcessNames(normalized.ApplicationRules.Where(rule => rule.Excluded));
-        NoRestoreProcessNamesBox.Text = JoinProcessNames(normalized.ApplicationRules.Where(rule => rule.DisableStateRestore));
+        IReadOnlyList<ApplicationRule> processOnlyRules = normalized.ApplicationRules
+            .Where(IsSimpleProcessRule)
+            .ToArray();
+        ExcludedProcessNamesBox.Text = JoinProcessNames(processOnlyRules.Where(IsCompleteExclusionRule));
+        NoRestoreProcessNamesBox.Text = JoinProcessNames(processOnlyRules.Where(IsSimpleNoRestoreRule));
+        _advancedApplicationRules.Clear();
+        _advancedApplicationRules.AddRange(normalized.ApplicationRules.Where(rule =>
+            !IsCompleteExclusionRule(rule) && !IsSimpleNoRestoreRule(rule)));
+        RefreshAdvancedApplicationRules();
+        _imeDetectionRules.Clear();
+        _imeDetectionRules.AddRange(normalized.ImeDetectionRules);
+        RefreshImeDetectionRuleList();
         SaveHintText.Text = string.Empty;
 
         _isInitialized = updateAfterLoad;
@@ -413,13 +477,19 @@ public partial class SettingsWindow : FluentWindow
         SetSectionVisibility(WindowMemorySectionTitle, WindowMemorySectionGroup, pageIndex == 2);
         SetSectionVisibility(WindowMemoryListSectionTitle, WindowMemoryListSectionGroup, pageIndex == 2);
         SetSectionVisibility(HotkeysSectionTitle, HotkeysSectionGroup, pageIndex == 3);
-        SetSectionVisibility(ApplicationRulesSectionTitle, ApplicationRulesSectionGroup, pageIndex == 4);
+        SetSectionVisibility(ImeDiagnosticsSectionTitle, ImeDiagnosticsSectionGroup, pageIndex == 4);
+        SetSectionVisibility(ApplicationRulesSectionTitle, ApplicationRulesSectionGroup, pageIndex == 5);
         if (pageIndex == 2)
         {
             RefreshWindowMemory();
         }
 
         if (pageIndex == 4)
+        {
+            RefreshImeDiagnostics();
+        }
+
+        if (pageIndex == 5)
         {
             RefreshDetectedWindows();
         }
@@ -518,7 +588,8 @@ public partial class SettingsWindow : FluentWindow
             MarkerBehavior = ReadMarkerBehaviorSettings(),
             GlobalHotkeysEnabled = hotkeys.Enabled,
             Hotkeys = hotkeys,
-            ApplicationRules = ReadApplicationRules()
+            ApplicationRules = ReadApplicationRules(),
+            ImeDetectionRules = ImeDetectionRuleNormalizer.Normalize(_imeDetectionRules)
         }.Normalize();
         return true;
     }
@@ -678,6 +749,115 @@ public partial class SettingsWindow : FluentWindow
     };
 
     private void OnRefreshWindowsClicked(object sender, RoutedEventArgs e) => RefreshDetectedWindows();
+
+    private void OnRefreshImeDiagnosticsClicked(object sender, RoutedEventArgs e) => RefreshImeDiagnostics();
+
+    private void OnImeDiagnosticsChanged(ImeDiagnosticSnapshot snapshot)
+    {
+        if (_windowClosed)
+        {
+            return;
+        }
+
+        Dispatcher.BeginInvoke(() => DisplayImeDiagnostics(snapshot));
+    }
+
+    private void RefreshImeDiagnostics()
+    {
+        if (_imeDiagnosticsSource?.CurrentSnapshot is ImeDiagnosticSnapshot snapshot)
+        {
+            DisplayImeDiagnostics(snapshot);
+            return;
+        }
+
+        ImeDiagnosticHintText.Text = "请先切换到任意文本输入框，再返回此页面";
+    }
+
+    private void DisplayImeDiagnostics(ImeDiagnosticSnapshot snapshot)
+    {
+        ImeDiagnosticHintText.Text = snapshot.MatchedRuleDescription is null
+            ? "正在显示最近一次外部文本输入焦点的数据"
+            : $"已匹配自定义规则：{snapshot.MatchedRuleDescription}";
+        ImeFinalModeText.Text = FormatInputMode(snapshot.FinalMode);
+        ImeDetectionSourceText.Text = snapshot.Source switch
+        {
+            ImeDetectionSource.CustomRule => "自定义状态码规则",
+            ImeDetectionSource.ConversionMode => "Conversion Mode",
+            ImeDetectionSource.OpenStatus => "Open Status",
+            ImeDetectionSource.Context => "IMM Context",
+            ImeDetectionSource.NonChineseLayout => "非中文键盘布局",
+            ImeDetectionSource.Fallback => "兼容回退",
+            _ => "等待数据"
+        };
+        ImeKeyboardLayoutText.Text = snapshot.KeyboardLayout;
+        ImeLanguageIdText.Text = $"0x{snapshot.LanguageId:X4}";
+        ImeOpenStatusCodeText.Text = snapshot.OpenStatusCode?.ToString(CultureInfo.InvariantCulture) ?? "不可读";
+        ImeConversionModeText.Text = snapshot.ConversionMode?.ToString(CultureInfo.InvariantCulture) ?? "不可读";
+        ImeFocusText.Text = $"0x{snapshot.FocusHwnd.ToInt64():X} · {snapshot.CaretSource}";
+        ImeTargetWindowText.Text = string.IsNullOrWhiteSpace(snapshot.WindowTitle)
+            ? snapshot.ProcessName
+            : $"{snapshot.ProcessName} · {snapshot.WindowTitle}";
+        ImeClassInfoText.Text = $"窗口类：{EmptyDisplay(snapshot.WindowClass)} · 控件类：{EmptyDisplay(snapshot.ControlClass)}";
+    }
+
+    private void OnCaptureChineseImeRuleClicked(object sender, RoutedEventArgs e) =>
+        CaptureCurrentImeRule(TextInputMode.Chinese);
+
+    private void OnCaptureEnglishImeRuleClicked(object sender, RoutedEventArgs e) =>
+        CaptureCurrentImeRule(TextInputMode.English);
+
+    private void CaptureCurrentImeRule(TextInputMode result)
+    {
+        if (_imeDiagnosticsSource?.CurrentSnapshot is not ImeDiagnosticSnapshot snapshot ||
+            (!snapshot.OpenStatusCode.HasValue && !snapshot.ConversionMode.HasValue))
+        {
+            ImeDiagnosticHintText.Text = "当前输入框没有可用于创建规则的状态码";
+            return;
+        }
+
+        var rule = new ImeDetectionRule
+        {
+            KeyboardLayout = snapshot.KeyboardLayout,
+            OpenStatusCode = snapshot.OpenStatusCode,
+            ConversionMode = snapshot.ConversionMode,
+            Result = result
+        };
+        _imeDetectionRules.RemoveAll(existing =>
+            string.Equals(existing.KeyboardLayout, rule.KeyboardLayout, StringComparison.OrdinalIgnoreCase) &&
+            existing.OpenStatusCode == rule.OpenStatusCode &&
+            existing.ConversionMode == rule.ConversionMode);
+        _imeDetectionRules.Add(rule);
+        RefreshImeDetectionRuleList();
+        ImeDiagnosticHintText.Text = $"已将当前状态码记录为{FormatInputMode(result)}，保存设置后生效";
+    }
+
+    private void OnDeleteImeRuleClicked(object sender, RoutedEventArgs e)
+    {
+        if (ImeDetectionRulesList.SelectedItem is not ImeDetectionRuleListItem item)
+        {
+            return;
+        }
+
+        _imeDetectionRules.Remove(item.Rule);
+        RefreshImeDetectionRuleList();
+    }
+
+    private void RefreshImeDetectionRuleList()
+    {
+        ImeDetectionRulesList.ItemsSource = _imeDetectionRules
+            .Select(rule => new ImeDetectionRuleListItem(rule))
+            .ToArray();
+    }
+
+    private static string FormatInputMode(TextInputMode mode) => mode switch
+    {
+        TextInputMode.Chinese => "中文",
+        TextInputMode.English => "英文",
+        _ => "未知"
+    };
+
+    private static string EmptyDisplay(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? "—" : value;
 
     private void OnWindowMemoryGlobalChanged(object sender, RoutedEventArgs e)
     {
@@ -864,6 +1044,23 @@ public partial class SettingsWindow : FluentWindow
     private void OnAddDetectedWindowToNoRestoreClicked(object sender, RoutedEventArgs e) =>
         AddDetectedWindowToRule(NoRestoreProcessNamesBox, "不恢复状态");
 
+    private void OnAddDetectedWindowAdvancedRuleClicked(object sender, RoutedEventArgs e)
+    {
+        if (DetectedWindowsBox.SelectedItem is not DetectedWindow window)
+        {
+            return;
+        }
+
+        var seed = new ApplicationRule
+        {
+            ProcessName = window.ProcessName,
+            WindowTitleContains = window.Title,
+            WindowClass = window.WindowClass,
+            ControlClass = window.ControlClass
+        };
+        OpenApplicationRuleEditor(seed, editIndex: null, isNewRule: true);
+    }
+
     private void RefreshDetectedWindows()
     {
         string? selectedProcessName = (DetectedWindowsBox.SelectedItem as DetectedWindow)?.ProcessName;
@@ -882,6 +1079,94 @@ public partial class SettingsWindow : FluentWindow
         bool hasSelection = DetectedWindowsBox.SelectedItem is DetectedWindow;
         AddDetectedWindowToExcludedButton.IsEnabled = hasSelection;
         AddDetectedWindowToNoRestoreButton.IsEnabled = hasSelection;
+        AddDetectedWindowAdvancedRuleButton.IsEnabled = hasSelection;
+    }
+
+    private void OnAdvancedApplicationRuleSelectionChanged(
+        object sender,
+        System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        bool hasSelection = AdvancedApplicationRulesBox.SelectedItem is ApplicationRuleListItem;
+        EditAdvancedApplicationRuleButton.IsEnabled = hasSelection;
+        DeleteAdvancedApplicationRuleButton.IsEnabled = hasSelection;
+    }
+
+    private void OnAdvancedApplicationRuleDoubleClicked(object sender, MouseButtonEventArgs e) =>
+        EditSelectedAdvancedApplicationRule();
+
+    private void OnNewAdvancedApplicationRuleClicked(object sender, RoutedEventArgs e) =>
+        OpenApplicationRuleEditor(rule: null, editIndex: null, isNewRule: true);
+
+    private void OnEditAdvancedApplicationRuleClicked(object sender, RoutedEventArgs e) =>
+        EditSelectedAdvancedApplicationRule();
+
+    private void OnDeleteAdvancedApplicationRuleClicked(object sender, RoutedEventArgs e)
+    {
+        int index = AdvancedApplicationRulesBox.SelectedIndex;
+        if (index < 0 || index >= _advancedApplicationRules.Count)
+        {
+            return;
+        }
+
+        _advancedApplicationRules.RemoveAt(index);
+        RefreshAdvancedApplicationRules();
+    }
+
+    private void EditSelectedAdvancedApplicationRule()
+    {
+        int index = AdvancedApplicationRulesBox.SelectedIndex;
+        if (index < 0 || index >= _advancedApplicationRules.Count)
+        {
+            return;
+        }
+
+        OpenApplicationRuleEditor(_advancedApplicationRules[index], index, isNewRule: false);
+    }
+
+    private void OpenApplicationRuleEditor(ApplicationRule? rule, int? editIndex, bool isNewRule)
+    {
+        var editor = new ApplicationRuleEditorWindow(rule, SelectedBackdrop())
+        {
+            Owner = this
+        };
+        bool? result = editor.ShowDialog();
+        if (result != true)
+        {
+            ApplyBackdrop(SelectedBackdrop());
+            return;
+        }
+
+        if (!isNewRule && editIndex is int deleteIndex && editor.DeleteRequested)
+        {
+            _advancedApplicationRules.RemoveAt(deleteIndex);
+        }
+        else if (editor.Rule is ApplicationRule editedRule)
+        {
+            ApplicationRule normalized = ApplicationRuleNormalizer.Normalize([editedRule]).Single();
+            if (editIndex is int index && !isNewRule)
+            {
+                _advancedApplicationRules[index] = normalized;
+            }
+            else
+            {
+                _advancedApplicationRules.Add(normalized);
+            }
+        }
+
+        RefreshAdvancedApplicationRules();
+        ApplyBackdrop(SelectedBackdrop());
+    }
+
+    private void RefreshAdvancedApplicationRules()
+    {
+        int selectedIndex = AdvancedApplicationRulesBox.SelectedIndex;
+        AdvancedApplicationRulesBox.ItemsSource = _advancedApplicationRules
+            .Select(rule => new ApplicationRuleListItem(rule))
+            .ToArray();
+        if (_advancedApplicationRules.Count > 0)
+        {
+            AdvancedApplicationRulesBox.SelectedIndex = Math.Clamp(selectedIndex, 0, _advancedApplicationRules.Count - 1);
+        }
     }
 
     private void AddDetectedWindowToRule(TextBox target, string ruleName)
@@ -1306,17 +1591,16 @@ public partial class SettingsWindow : FluentWindow
 
     private IReadOnlyList<ApplicationRule> ReadApplicationRules()
     {
-        var rules = new Dictionary<string, ApplicationRule>(StringComparer.OrdinalIgnoreCase);
-        AddApplicationRules(rules, ExcludedProcessNamesBox.Text, excluded: true, disableRestore: false);
-        AddApplicationRules(rules, NoRestoreProcessNamesBox.Text, excluded: false, disableRestore: true);
-        return ApplicationRuleNormalizer.Normalize(rules.Values.ToArray());
+        var rules = new List<ApplicationRule>(_advancedApplicationRules);
+        AddApplicationRules(rules, ExcludedProcessNamesBox.Text, completeExclusion: true);
+        AddApplicationRules(rules, NoRestoreProcessNamesBox.Text, completeExclusion: false);
+        return ApplicationRuleNormalizer.Normalize(rules);
     }
 
     private static void AddApplicationRules(
-        Dictionary<string, ApplicationRule> rules,
+        List<ApplicationRule> rules,
         string text,
-        bool excluded,
-        bool disableRestore)
+        bool completeExclusion)
     {
         foreach (string rawName in text.Split(['\r', '\n', ',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
@@ -1326,18 +1610,32 @@ public partial class SettingsWindow : FluentWindow
                 continue;
             }
 
-            rules.TryGetValue(processName, out ApplicationRule? existing);
-            existing ??= new ApplicationRule { ProcessName = processName };
-            rules[processName] = existing with
+            rules.Add(new ApplicationRule
             {
-                Excluded = existing.Excluded || excluded,
-                DisableStateRestore = existing.DisableStateRestore || disableRestore
-            };
+                ProcessName = processName,
+                HideMarker = completeExclusion,
+                DisableWindowMemory = completeExclusion,
+                DisableStateRestore = true
+            });
         }
     }
 
     private static string JoinProcessNames(IEnumerable<ApplicationRule> rules) =>
         string.Join(Environment.NewLine, rules.Select(rule => rule.ProcessName));
+
+    private static bool IsSimpleProcessRule(ApplicationRule rule) =>
+        string.IsNullOrEmpty(rule.WindowTitleContains) &&
+        string.IsNullOrEmpty(rule.WindowClass) &&
+        string.IsNullOrEmpty(rule.ControlClass) &&
+        rule.OffsetX is null && rule.OffsetY is null;
+
+    private static bool IsCompleteExclusionRule(ApplicationRule rule) =>
+        IsSimpleProcessRule(rule) && rule.HideMarker &&
+        rule.DisableWindowMemory && rule.DisableStateRestore;
+
+    private static bool IsSimpleNoRestoreRule(ApplicationRule rule) =>
+        IsSimpleProcessRule(rule) && !rule.HideMarker &&
+        !rule.DisableWindowMemory && rule.DisableStateRestore;
 
     private MarkerStyle SelectedStyle() =>
         StyleBox.SelectedItem is ComboBoxItem item && item.Tag is MarkerStyle style

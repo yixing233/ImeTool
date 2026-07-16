@@ -48,4 +48,23 @@ public sealed class WindowDiscoveryServiceTests
         Assert.Equal("Code\r\nchrome\r\nNOTEPAD", once);
         Assert.Equal(once, twice);
     }
+
+    [Fact]
+    public void NormalizeCandidates_PreservesAndTrimsWindowContext()
+    {
+        DetectedWindow[] candidates =
+        [
+            new(new IntPtr(2), 20, "chrome.exe", " Example ", true)
+            {
+                WindowClass = " Chrome_WidgetWin_1 ",
+                ControlClass = " Chrome_RenderWidgetHostHWND "
+            }
+        ];
+
+        DetectedWindow window = Assert.Single(
+            WindowDiscoveryService.NormalizeCandidates(candidates, currentProcessId: 10));
+
+        Assert.Equal("Chrome_WidgetWin_1", window.WindowClass);
+        Assert.Equal("Chrome_RenderWidgetHostHWND", window.ControlClass);
+    }
 }

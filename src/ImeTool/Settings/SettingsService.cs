@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using ImeTool.Ime;
 
 namespace ImeTool.Settings;
 
@@ -23,6 +24,61 @@ public enum MarkerDisplayMode
     WhileTyping = 2
 }
 
+public sealed record ImeDetectionRule
+{
+    public string KeyboardLayout { get; init; } = "*";
+    public long? OpenStatusCode { get; init; }
+    public uint? ConversionMode { get; init; }
+    public TextInputMode Result { get; init; }
+}
+
+public static class ImeDetectionRuleNormalizer
+{
+    public static IReadOnlyList<ImeDetectionRule> Normalize(IReadOnlyList<ImeDetectionRule>? rules)
+    {
+        if (rules is null || rules.Count == 0)
+        {
+            return [];
+        }
+
+        var normalized = new Dictionary<string, ImeDetectionRule>(StringComparer.OrdinalIgnoreCase);
+        foreach (ImeDetectionRule? rule in rules)
+        {
+            if (rule is null ||
+                rule.Result == TextInputMode.Unknown ||
+                (!rule.OpenStatusCode.HasValue && !rule.ConversionMode.HasValue))
+            {
+                continue;
+            }
+
+            string layout = NormalizeKeyboardLayout(rule.KeyboardLayout);
+            var value = rule with { KeyboardLayout = layout };
+            string key = $"{layout}|{value.OpenStatusCode?.ToString() ?? "*"}|{value.ConversionMode?.ToString() ?? "*"}";
+            normalized[key] = value;
+        }
+
+        return normalized.Values.ToArray();
+    }
+
+    public static string NormalizeKeyboardLayout(string? value)
+    {
+        string text = value?.Trim() ?? string.Empty;
+        if (string.IsNullOrEmpty(text) || text == "*")
+        {
+            return "*";
+        }
+
+        if (text.StartsWith("0x", StringComparison.OrdinalIgnoreCase))
+        {
+            text = text[2..];
+        }
+
+        return ulong.TryParse(text, System.Globalization.NumberStyles.HexNumber, null, out ulong layout)
+            ? $"0x{layout:X16}"
+            : "*";
+    }
+}
+
 public sealed record MarkerBehaviorSettings
 {
     public MarkerDisplayMode DisplayMode { get; init; } = MarkerDisplayMode.Always;
@@ -42,8 +98,18 @@ public sealed record MarkerBehaviorSettings
 public sealed record ApplicationRule
 {
     public string ProcessName { get; init; } = string.Empty;
+    public string WindowTitleContains { get; init; } = string.Empty;
+    public string WindowClass { get; init; } = string.Empty;
+    public string ControlClass { get; init; } = string.Empty;
+
+    // Legacy settings used Excluded as one combined switch. It is retained for
+    // JSON migration and expanded by ApplicationRuleNormalizer.
     public bool Excluded { get; init; }
+    public bool HideMarker { get; init; }
+    public bool DisableWindowMemory { get; init; }
     public bool DisableStateRestore { get; init; }
+    public int? OffsetX { get; init; }
+    public int? OffsetY { get; init; }
 }
 
 [Flags]
@@ -160,7 +226,7 @@ public sealed record MarkerAppearanceSettings
 
 public sealed record AppSettings
 {
-    public int SettingsVersion { get; init; } = 12;
+    public int SettingsVersion { get; init; } = 14;
     public bool Enabled { get; init; } = true;
     public bool StartWithWindows { get; init; } = false;
     public bool SilentStart { get; init; } = true;
@@ -174,6 +240,7 @@ public sealed record AppSettings
     public bool GlobalHotkeysEnabled { get; init; } = true;
     public GlobalHotkeySettings Hotkeys { get; init; } = new();
     public IReadOnlyList<ApplicationRule> ApplicationRules { get; init; } = [];
+    public IReadOnlyList<ImeDetectionRule> ImeDetectionRules { get; init; } = [];
 
     public AppSettings Normalize()
     {
@@ -186,7 +253,7 @@ public sealed record AppSettings
 
         return this with
         {
-            SettingsVersion = 12,
+            SettingsVersion = 14,
             WindowMemoryStoragePath = WindowMemoryStoragePath?.Trim() ?? string.Empty,
             SettingsBackdrop = Enum.IsDefined(SettingsBackdrop)
                 ? SettingsBackdrop
@@ -195,7 +262,8 @@ public sealed record AppSettings
             MarkerBehavior = (MarkerBehavior ?? new MarkerBehaviorSettings()).Normalize(),
             GlobalHotkeysEnabled = hotkeys.Enabled,
             Hotkeys = hotkeys,
-            ApplicationRules = ApplicationRuleNormalizer.Normalize(ApplicationRules)
+            ApplicationRules = ApplicationRuleNormalizer.Normalize(ApplicationRules),
+            ImeDetectionRules = ImeDetectionRuleNormalizer.Normalize(ImeDetectionRules)
         };
     }
 }
@@ -218,27 +286,54 @@ public static class ApplicationRuleNormalizer
             }
 
             string processName = NormalizeProcessName(rule.ProcessName);
-            if (string.IsNullOrEmpty(processName) || (!rule.Excluded && !rule.DisableStateRestore))
+            string title = NormalizeContextValue(rule.WindowTitleContains);
+            string windowClass = NormalizeContextValue(rule.WindowClass);
+            string controlClass = NormalizeContextValue(rule.ControlClass);
+            bool hideMarker = rule.HideMarker || rule.Excluded;
+            bool disableWindowMemory = rule.DisableWindowMemory || rule.Excluded;
+            bool disableStateRestore = rule.DisableStateRestore || rule.Excluded;
+            if (string.IsNullOrEmpty(processName) ||
+                (!hideMarker && !disableWindowMemory && !disableStateRestore &&
+                 rule.OffsetX is null && rule.OffsetY is null))
             {
                 continue;
             }
 
-            if (combined.TryGetValue(processName, out ApplicationRule? existing))
+            string key = string.Join('\u001F', processName, title, windowClass, controlClass);
+            var normalized = rule with
             {
-                combined[processName] = existing with
+                ProcessName = processName,
+                WindowTitleContains = title,
+                WindowClass = windowClass,
+                ControlClass = controlClass,
+                Excluded = false,
+                HideMarker = hideMarker,
+                DisableWindowMemory = disableWindowMemory,
+                DisableStateRestore = disableStateRestore
+            };
+
+            if (combined.TryGetValue(key, out ApplicationRule? existing))
+            {
+                combined[key] = existing with
                 {
-                    Excluded = existing.Excluded || rule.Excluded,
-                    DisableStateRestore = existing.DisableStateRestore || rule.DisableStateRestore
+                    HideMarker = existing.HideMarker || normalized.HideMarker,
+                    DisableWindowMemory = existing.DisableWindowMemory || normalized.DisableWindowMemory,
+                    DisableStateRestore = existing.DisableStateRestore || normalized.DisableStateRestore,
+                    OffsetX = normalized.OffsetX ?? existing.OffsetX,
+                    OffsetY = normalized.OffsetY ?? existing.OffsetY
                 };
             }
             else
             {
-                combined[processName] = rule with { ProcessName = processName };
+                combined[key] = normalized;
             }
         }
 
         return combined.Values
             .OrderBy(rule => rule.ProcessName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(rule => rule.WindowTitleContains, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(rule => rule.WindowClass, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(rule => rule.ControlClass, StringComparer.OrdinalIgnoreCase)
             .ToArray();
     }
 
@@ -254,6 +349,8 @@ public static class ApplicationRuleNormalizer
             ? name[..^4]
             : name;
     }
+
+    public static string NormalizeContextValue(string? value) => value?.Trim() ?? string.Empty;
 }
 
 public sealed class SettingsService

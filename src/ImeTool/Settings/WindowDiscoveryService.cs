@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Text;
 using ImeTool.Native;
 
 namespace ImeTool.Settings;
@@ -11,6 +10,8 @@ public sealed record DetectedWindow(
     string Title,
     bool IsForeground)
 {
+    public string WindowClass { get; init; } = string.Empty;
+    public string ControlClass { get; init; } = string.Empty;
     public string DisplayName => $"{ProcessName}.exe  ·  {Title}";
 }
 
@@ -44,12 +45,18 @@ public sealed class WindowDiscoveryService
                 }
 
                 using Process process = Process.GetProcessById(checked((int)processId));
+                string windowClass = WindowContextReader.ReadClassName(handle);
+                string controlClass = ReadFocusedControlClass(handle);
                 candidates.Add(new DetectedWindow(
                     handle,
                     processId,
                     process.ProcessName,
                     title,
-                    handle == foreground));
+                    handle == foreground)
+                {
+                    WindowClass = windowClass,
+                    ControlClass = controlClass
+                });
             }
             catch
             {
@@ -71,7 +78,9 @@ public sealed class WindowDiscoveryService
             .Select(window => window with
             {
                 ProcessName = ApplicationRuleNormalizer.NormalizeProcessName(window.ProcessName),
-                Title = window.Title.Trim()
+                Title = window.Title.Trim(),
+                WindowClass = window.WindowClass.Trim(),
+                ControlClass = window.ControlClass.Trim()
             })
             .Where(window => !string.IsNullOrWhiteSpace(window.ProcessName) &&
                              !string.IsNullOrWhiteSpace(window.Title))
@@ -83,17 +92,18 @@ public sealed class WindowDiscoveryService
             .ToArray();
     }
 
-    private static string ReadWindowTitle(IntPtr handle)
-    {
-        int length = NativeMethods.GetWindowTextLength(handle);
-        if (length <= 0)
-        {
-            return string.Empty;
-        }
+    private static string ReadWindowTitle(IntPtr handle) => WindowContextReader.ReadWindowTitle(handle);
 
-        var title = new StringBuilder(length + 1);
-        return NativeMethods.GetWindowText(handle, title, title.Capacity) > 0
-            ? title.ToString()
+    private static string ReadFocusedControlClass(IntPtr rootHwnd)
+    {
+        uint threadId = NativeMethods.GetWindowThreadProcessId(rootHwnd, out _);
+        var info = new NativeMethods.GUITHREADINFO
+        {
+            cbSize = System.Runtime.InteropServices.Marshal.SizeOf<NativeMethods.GUITHREADINFO>()
+        };
+
+        return threadId != 0 && NativeMethods.GetGUIThreadInfo(threadId, ref info)
+            ? WindowContextReader.ReadClassName(info.hwndFocus)
             : string.Empty;
     }
 }

@@ -1,5 +1,4 @@
 using System.Windows.Threading;
-using System.Text;
 using ImeTool.Caret;
 using ImeTool.Diagnostics;
 using ImeTool.Ime;
@@ -25,6 +24,8 @@ public sealed class AppController : IDisposable
     private readonly InferredInputModeTracker _inferredInputModeTracker;
     private readonly IWindowInfoService _windowInfoService;
     private readonly IImeService _imeService;
+    private readonly IImeDiagnosticService? _imeDiagnosticService;
+    private readonly ImeDiagnosticsState _imeDiagnosticsState;
     private readonly WindowStateStore _stateStore;
     private readonly WindowMemoryManager _windowMemory;
     private readonly FocusTracker _focusTracker;
@@ -35,6 +36,8 @@ public sealed class AppController : IDisposable
     private readonly GitHubUpdateService _updateService;
     private readonly CancellationTokenSource _updateCancellation = new();
     private readonly ProcessNameResolver _processNameResolver;
+    private readonly WindowContextReader _windowContextReader;
+    private readonly Dictionary<WindowKey, ApplicationRuleMatch> _applicationRuleMatchCache = [];
     private readonly DispatcherTimer _timer;
     private AppSettings _settings;
     private ApplicationRuleMatcher _applicationRuleMatcher;
@@ -61,17 +64,23 @@ public sealed class AppController : IDisposable
         _capsLockService = new CapsLockService();
         _inferredInputModeTracker = new InferredInputModeTracker();
         _windowInfoService = new WindowInfoService();
-        _imeService = new ImeService();
+        var imeService = new ImeService();
+        _imeService = imeService;
+        _imeDiagnosticService = imeService;
+        _imeDiagnosticService.SetDetectionRules(_settings.ImeDetectionRules);
+        _imeDiagnosticsState = new ImeDiagnosticsState();
         _stateStore = new WindowStateStore();
         _windowMemory = new WindowMemoryManager(_stateStore, _settings.EnableWindowMemory);
         ConfigureWindowMemoryPersistence(_settings);
         _processNameResolver = new ProcessNameResolver();
+        _windowContextReader = new WindowContextReader();
         _applicationRuleMatcher = new ApplicationRuleMatcher(_settings.ApplicationRules);
         _focusTracker = new FocusTracker(
             _imeService,
             _stateStore,
             _windowInfoService,
-            CanTrackWindowState);
+            CanTrackWindowState,
+            CanRestoreWindowState);
         _overlay = new MarkerOverlay();
         _overlay.ConfigureBehavior(_settings.MarkerBehavior);
         _eventHook = new WinEventHook();
@@ -160,6 +169,7 @@ public sealed class AppController : IDisposable
             _overlay.HideMarker(immediate: true);
             if (_settings.Enabled)
             {
+                CacheApplicationRule(hwnd);
                 _focusTracker.HandleFocusChanged(hwnd);
             }
         });
@@ -201,6 +211,8 @@ public sealed class AppController : IDisposable
         }
 
         bool hasWindowKey = _windowInfoService.TryGetWindowKey(caret.FocusHwnd, out WindowKey key);
+        ApplicationRuleMatch rule = ApplicationRuleMatch.None;
+        WindowContextSnapshot windowContext = _windowContextReader.Read(caret.FocusHwnd);
         if (hasWindowKey)
         {
             bool isVisible = _windowInfoService.IsWindowVisible(key.Hwnd);
@@ -213,14 +225,8 @@ public sealed class AppController : IDisposable
                 return;
             }
 
-            ApplicationRuleMatch rule = GetApplicationRule(key.ProcessId);
-            if (rule.Excluded)
-            {
-                DiagnosticsLog.WriteThrottled($"Marker hidden: application excluded by rule for {key}.");
-                _markerVisibility.Reset();
-                _overlay.HideMarker();
-                return;
-            }
+            rule = GetApplicationRule(key, windowContext);
+            _applicationRuleMatchCache[key] = rule;
 
             if (WindowMemoryObservationPolicy.ShouldObserve(
                     hasValidatedTextCaret: true,
@@ -228,7 +234,7 @@ public sealed class AppController : IDisposable
                     isOwnProcess: false,
                     isVisible: isVisible,
                     isMinimized: isMinimized,
-                    isExcluded: rule.Excluded))
+                    isExcluded: rule.DisableWindowMemory))
             {
                 WindowMemoryObservationResult observation = ObserveWindow(caret.FocusHwnd);
                 if (observation.HasPersistedState)
@@ -246,7 +252,21 @@ public sealed class AppController : IDisposable
                 $"IME live status unknown for hwnd 0x{caret.FocusHwnd.ToInt64():X}; window memory is not used for marker display.");
         }
 
-        TextInputMode reportedInputMode = _imeService.GetInputMode(caret.FocusHwnd);
+        ImeDiagnosticSnapshot? diagnosticSnapshot = _imeDiagnosticService?.ReadDiagnostics(caret.FocusHwnd);
+        TextInputMode reportedInputMode = diagnosticSnapshot?.FinalMode ?? _imeService.GetInputMode(caret.FocusHwnd);
+        if (diagnosticSnapshot is not null)
+        {
+            string processName = _processNameResolver.Resolve(focusProcessId) ?? $"PID {focusProcessId}";
+            string windowTitle = hasWindowKey ? windowContext.WindowTitle : string.Empty;
+            _imeDiagnosticsState.Update(diagnosticSnapshot with
+            {
+                ProcessName = processName,
+                WindowTitle = windowTitle,
+                CaretSource = caret.Source.ToString(),
+                WindowClass = windowContext.WindowClass,
+                ControlClass = windowContext.ControlClass
+            });
+        }
         TextInputMode inputMode = reportedInputMode;
         if (hasWindowKey)
         {
@@ -287,15 +307,22 @@ public sealed class AppController : IDisposable
             caret.FocusHwnd,
             markerState,
             caret.ScreenRect);
-        if (_markerTemporarilyHidden || !strategyAllowsDisplay)
+        if (rule.HideMarker || _markerTemporarilyHidden || !strategyAllowsDisplay)
         {
-            string reason = _markerTemporarilyHidden ? "temporarily hidden" : "display strategy idle";
+            string reason = rule.HideMarker
+                ? "hidden by application rule"
+                : _markerTemporarilyHidden ? "temporarily hidden" : "display strategy idle";
             DiagnosticsLog.WriteThrottled($"Marker hidden: {reason}.");
             _overlay.HideMarker();
             return;
         }
 
-        _overlay.Update(markerState, caret.ScreenRect, _settings.Marker, _settings.MarkerBehavior);
+        MarkerAppearanceSettings effectiveMarker = _settings.Marker with
+        {
+            OffsetX = _settings.Marker.OffsetX + (rule.OffsetX ?? 0),
+            OffsetY = _settings.Marker.OffsetY + (rule.OffsetY ?? 0)
+        };
+        _overlay.Update(markerState, caret.ScreenRect, effectiveMarker, _settings.MarkerBehavior);
         DiagnosticsLog.WriteThrottled(
             $"Marker shown: state={markerState}, inputMode={inputMode}, imeStatus={status}, source={caret.Source}, hwnd=0x{caret.FocusHwnd.ToInt64():X}, caret=({caret.ScreenRect.Left},{caret.ScreenRect.Top},{caret.ScreenRect.Right},{caret.ScreenRect.Bottom}), style={_settings.Marker.Style}.",
             $"marker-shown:{markerState}:{caret.Source}:{caret.FocusHwnd}");
@@ -332,7 +359,7 @@ public sealed class AppController : IDisposable
         }
 
         _settingsWindowOpen = true;
-        var window = new SettingsWindow(_settings, _windowMemory)
+        var window = new SettingsWindow(_settings, _windowMemory, _imeDiagnosticsState)
         {
             Topmost = false
         };
@@ -368,6 +395,8 @@ public sealed class AppController : IDisposable
             RequestRememberedStateForForegroundWindow();
         }
         _applicationRuleMatcher = new ApplicationRuleMatcher(_settings.ApplicationRules);
+        _applicationRuleMatchCache.Clear();
+        _imeDiagnosticService?.SetDetectionRules(_settings.ImeDetectionRules);
         _processNameResolver.Clear();
         _markerVisibility.Reset();
         _overlay.ConfigureBehavior(_settings.MarkerBehavior);
@@ -382,20 +411,49 @@ public sealed class AppController : IDisposable
         }
     }
 
-    private ApplicationRuleMatch GetApplicationRule(uint processId)
+    private ApplicationRuleMatch GetApplicationRule(WindowKey key, WindowContextSnapshot context)
     {
         if (!_applicationRuleMatcher.HasRules)
         {
             return ApplicationRuleMatch.None;
         }
 
-        return _applicationRuleMatcher.Match(_processNameResolver.Resolve(processId));
+        return _applicationRuleMatcher.Match(new ApplicationRuleContext(
+            _processNameResolver.Resolve(key.ProcessId) ?? string.Empty,
+            context.WindowTitle,
+            context.WindowClass,
+            context.ControlClass));
     }
 
     private bool CanTrackWindowState(WindowKey key)
     {
-        ApplicationRuleMatch rule = GetApplicationRule(key.ProcessId);
-        return _windowMemory.CanTrack(key) && !rule.Excluded && !rule.DisableStateRestore;
+        ApplicationRuleMatch rule = GetCachedApplicationRule(key);
+        return _windowMemory.CanTrack(key) && !rule.DisableWindowMemory;
+    }
+
+    private bool CanRestoreWindowState(WindowKey key) =>
+        CanTrackWindowState(key) && !GetCachedApplicationRule(key).DisableStateRestore;
+
+    private ApplicationRuleMatch GetCachedApplicationRule(WindowKey key)
+    {
+        if (_applicationRuleMatchCache.TryGetValue(key, out ApplicationRuleMatch cached))
+        {
+            return cached;
+        }
+
+        WindowContextSnapshot context = _windowContextReader.Read(key.Hwnd);
+        ApplicationRuleMatch match = GetApplicationRule(key, context);
+        _applicationRuleMatchCache[key] = match;
+        return match;
+    }
+
+    private void CacheApplicationRule(IntPtr focusedHwnd)
+    {
+        if (_windowInfoService.TryGetWindowKey(focusedHwnd, out WindowKey key))
+        {
+            WindowContextSnapshot context = _windowContextReader.Read(focusedHwnd);
+            _applicationRuleMatchCache[key] = GetApplicationRule(key, context);
+        }
     }
 
     private WindowMemoryObservationResult ObserveWindow(IntPtr hwnd)
@@ -407,7 +465,7 @@ public sealed class AppController : IDisposable
         }
 
         string processName = _processNameResolver.Resolve(key.ProcessId) ?? $"PID {key.ProcessId}";
-        string title = ReadWindowTitle(key.Hwnd);
+        string title = WindowContextReader.ReadWindowTitle(key.Hwnd);
         return _windowMemory.ObserveWindow(key, title, processName, DateTimeOffset.Now);
     }
 
@@ -443,20 +501,6 @@ public sealed class AppController : IDisposable
 
     private bool IsWindowKeyAlive(WindowKey key) =>
         _windowInfoService.TryGetWindowKey(key.Hwnd, out WindowKey current) && current == key;
-
-    private static string ReadWindowTitle(IntPtr hwnd)
-    {
-        int length = NativeMethods.GetWindowTextLength(hwnd);
-        if (length <= 0)
-        {
-            return string.Empty;
-        }
-
-        var title = new StringBuilder(length + 1);
-        return NativeMethods.GetWindowText(hwnd, title, title.Capacity) > 0
-            ? title.ToString()
-            : string.Empty;
-    }
 
     private void OnGlobalHotkeyCommand(object? sender, GlobalHotkeyCommand command)
     {

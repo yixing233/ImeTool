@@ -7,6 +7,33 @@ namespace ImeTool.Tests.Tracking;
 public sealed class FocusTrackerTests
 {
     [Fact]
+    public void Restore_Can_Be_Disabled_While_State_Tracking_Remains_Enabled()
+    {
+        var ime = new FakeImeService();
+        var store = new WindowStateStore();
+        var windows = new FakeWindowInfoService();
+        var tracker = new FocusTracker(
+            ime,
+            store,
+            windows,
+            canTrackState: _ => true,
+            canRestoreState: _ => false);
+        IntPtr focus = new(9);
+        var key = new WindowKey(new IntPtr(1), 1001);
+        windows.Map(focus, key);
+        store.Save(key, true);
+        ime.StatusByHwnd[focus] = ImeOpenStatus.Closed;
+        ime.ModeByHwnd[focus] = TextInputMode.English;
+
+        tracker.HandleFocusChanged(focus);
+        tracker.UpdateCurrentImeState(focus);
+
+        Assert.Empty(ime.SetCalls);
+        Assert.True(store.TryGet(key, out bool rememberedIsOpen));
+        Assert.False(rememberedIsOpen);
+    }
+
+    [Fact]
     public void Switching_Back_To_Window_Restores_Saved_Ime_State()
     {
         var ime = new FakeImeService();

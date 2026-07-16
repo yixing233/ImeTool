@@ -14,6 +14,8 @@ public sealed class ImeModeSignalTracker
     private uint _lastConversionMode;
     private bool _hasReading;
 
+    public ImeDetectionSource LastSource { get; private set; } = ImeDetectionSource.Fallback;
+
     public TextInputMode Resolve(
         IntPtr hwnd,
         bool openStatusKnown,
@@ -27,6 +29,7 @@ public sealed class ImeModeSignalTracker
             openStatus == ImeOpenStatus.Unknown ||
             !conversionModeKnown)
         {
+            LastSource = ImeDetectionSource.Fallback;
             return fallbackMode;
         }
 
@@ -61,8 +64,13 @@ public sealed class ImeModeSignalTracker
 
     private TextInputMode Select(
         TextInputMode openStatusMode,
-        TextInputMode conversionModeResult) =>
-        _source == SignalSource.OpenStatus ? openStatusMode : conversionModeResult;
+        TextInputMode conversionModeResult)
+    {
+        LastSource = _source == SignalSource.OpenStatus
+            ? ImeDetectionSource.OpenStatus
+            : ImeDetectionSource.ConversionMode;
+        return _source == SignalSource.OpenStatus ? openStatusMode : conversionModeResult;
+    }
 
     private void StoreReading(IntPtr hwnd, ImeOpenStatus openStatus, uint conversionMode)
     {

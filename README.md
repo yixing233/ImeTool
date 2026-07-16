@@ -8,7 +8,7 @@ Windows 输入法状态提示工具，在文本光标旁显示中文、英文及
 
 - 在文本光标附近显示中文、英文和大写锁定状态
 - 兼容 Chromium 地址栏及现代 TSF 输入框的状态与光标定位
-- 实时状态与窗口记忆相互隔离，并即时响应 Shift、Ctrl+Space 中英切换
+- 实时状态与窗口记忆相互隔离，通过输入法原始状态码与转换模式判定实际中英状态
 - 按顶层窗口独立记忆并恢复中英文输入状态
 - 自动恢复会读回验证实际中英模式，并为现代 TSF 输入法提供 Shift 兼容回退
 - 提供窗口记忆总开关、运行期窗口列表和单窗口独立开关
@@ -17,7 +17,9 @@ Windows 输入法状态提示工具，在文本光标旁显示中文、英文及
 - 可分别配置中文、英文和大写状态的颜色、文字与图片
 - 支持始终显示、切换时显示、输入时显示等显示策略
 - 支持标记跟随动画、淡入淡出、位置偏移和尺寸调整
-- 支持应用排除规则，并可检测当前已打开的窗口
+- 提供输入法诊断页，可查看 HKL、Open Status、Conversion Mode，并捕获自定义状态码识别规则
+- 支持按进程、标题、窗口类和控件类设置高级应用规则，可独立隐藏标记、禁用记忆、禁止恢复或追加位置偏移
+- 可检测当前已打开的窗口并直接预填应用规则
 - 支持自定义全局快捷键
 - 提供系统托盘菜单、开机启动和静默启动
 - 通过 GitHub Releases 自动检查、下载并安装新版本
@@ -79,7 +81,7 @@ dotnet publish src\ImeTool\ImeTool.csproj `
   -o artifacts\installer-publish
 
 .\installer\build-installer.ps1 `
-  -Version 1.0.20 `
+  -Version 1.0.21 `
   -PublishDir artifacts\installer-publish `
   -OutputDir artifacts\installer
 ```

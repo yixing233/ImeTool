@@ -256,6 +256,12 @@
                         </ListBoxItem>
                         <ListBoxItem Style="{StaticResource SettingsNavigationItemStyle}">
                             <StackPanel Orientation="Horizontal">
+                                <ui:SymbolIcon Symbol="Info24" FontSize="19" Width="24" />
+                                <TextBlock Text="输入法诊断" Margin="9,0,0,0" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </ListBoxItem>
+                        <ListBoxItem Style="{StaticResource SettingsNavigationItemStyle}">
+                            <StackPanel Orientation="Horizontal">
                                 <ui:SymbolIcon Symbol="AppsListDetail24" FontSize="19" Width="24" />
                                 <TextBlock Text="应用规则" Margin="9,0,0,0" VerticalAlignment="Center" />
                             </StackPanel>
@@ -997,6 +1003,117 @@
                         </Grid>
                     </StackPanel>
                 </Border>
+                <TextBlock x:Name="ImeDiagnosticsSectionTitle" Text="输入法诊断" Style="{StaticResource SectionTitleStyle}" Visibility="Collapsed" />
+                <Border x:Name="ImeDiagnosticsSectionGroup" Style="{StaticResource SettingsGroupStyle}" Visibility="Collapsed">
+                    <StackPanel>
+                        <Grid Margin="18,16">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock Text="当前输入状态" Style="{StaticResource RowTitleStyle}" />
+                                <TextBlock x:Name="ImeDiagnosticHintText"
+                                           Text="请先切换到任意文本输入框"
+                                           Style="{StaticResource RowDescriptionStyle}" />
+                            </StackPanel>
+                            <Button Grid.Column="1"
+                                    Width="76"
+                                    Content="刷新"
+                                    Style="{StaticResource InlineActionButtonStyle}"
+                                    Click="OnRefreshImeDiagnosticsClicked" />
+
+                            <UniformGrid Grid.Row="1" Grid.ColumnSpan="2" Columns="2" Margin="0,14,0,0">
+                                <Border Margin="0,0,6,8" Padding="12,9" Background="{DynamicResource SettingsPreviewBackgroundBrush}" CornerRadius="6">
+                                    <StackPanel><TextBlock Text="最终状态" Style="{StaticResource RowDescriptionStyle}" Margin="0" /><TextBlock x:Name="ImeFinalModeText" Text="—" Style="{StaticResource RowTitleStyle}" Margin="0,3,0,0" /></StackPanel>
+                                </Border>
+                                <Border Margin="6,0,0,8" Padding="12,9" Background="{DynamicResource SettingsPreviewBackgroundBrush}" CornerRadius="6">
+                                    <StackPanel><TextBlock Text="判定来源" Style="{StaticResource RowDescriptionStyle}" Margin="0" /><TextBlock x:Name="ImeDetectionSourceText" Text="—" Style="{StaticResource RowTitleStyle}" Margin="0,3,0,0" /></StackPanel>
+                                </Border>
+                                <Border Margin="0,0,6,8" Padding="12,9" Background="{DynamicResource SettingsPreviewBackgroundBrush}" CornerRadius="6">
+                                    <StackPanel><TextBlock Text="键盘布局 HKL" Style="{StaticResource RowDescriptionStyle}" Margin="0" /><TextBlock x:Name="ImeKeyboardLayoutText" Text="—" TextWrapping="Wrap" /></StackPanel>
+                                </Border>
+                                <Border Margin="6,0,0,8" Padding="12,9" Background="{DynamicResource SettingsPreviewBackgroundBrush}" CornerRadius="6">
+                                    <StackPanel><TextBlock Text="语言 ID" Style="{StaticResource RowDescriptionStyle}" Margin="0" /><TextBlock x:Name="ImeLanguageIdText" Text="—" /></StackPanel>
+                                </Border>
+                                <Border Margin="0,0,6,8" Padding="12,9" Background="{DynamicResource SettingsPreviewBackgroundBrush}" CornerRadius="6">
+                                    <StackPanel><TextBlock Text="Open Status Code" Style="{StaticResource RowDescriptionStyle}" Margin="0" /><TextBlock x:Name="ImeOpenStatusCodeText" Text="—" /></StackPanel>
+                                </Border>
+                                <Border Margin="6,0,0,8" Padding="12,9" Background="{DynamicResource SettingsPreviewBackgroundBrush}" CornerRadius="6">
+                                    <StackPanel><TextBlock Text="Conversion Mode" Style="{StaticResource RowDescriptionStyle}" Margin="0" /><TextBlock x:Name="ImeConversionModeText" Text="—" /></StackPanel>
+                                </Border>
+                                <Border Margin="0,0,6,0" Padding="12,9" Background="{DynamicResource SettingsPreviewBackgroundBrush}" CornerRadius="6">
+                                    <StackPanel><TextBlock Text="焦点与光标来源" Style="{StaticResource RowDescriptionStyle}" Margin="0" /><TextBlock x:Name="ImeFocusText" Text="—" TextWrapping="Wrap" /></StackPanel>
+                                </Border>
+                                <Border Margin="6,0,0,0" Padding="12,9" Background="{DynamicResource SettingsPreviewBackgroundBrush}" CornerRadius="6">
+                                    <StackPanel><TextBlock Text="应用与窗口" Style="{StaticResource RowDescriptionStyle}" Margin="0" /><TextBlock x:Name="ImeTargetWindowText" Text="—" TextWrapping="Wrap" TextTrimming="CharacterEllipsis" /></StackPanel>
+                                </Border>
+                            </UniformGrid>
+
+                            <TextBlock x:Name="ImeClassInfoText"
+                                       Grid.Row="2"
+                                       Grid.ColumnSpan="2"
+                                       Margin="0,10,0,0"
+                                       Foreground="#686868"
+                                       FontSize="12"
+                                       Text="窗口类：— · 控件类：—"
+                                       TextWrapping="Wrap" />
+                        </Grid>
+
+                        <Border Height="1" Background="{DynamicResource SettingsDividerBrush}" />
+
+                        <Grid Margin="18,14,18,16">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <TextBlock Text="自定义状态码规则" Style="{StaticResource RowTitleStyle}" />
+                            <TextBlock Grid.Row="1"
+                                       Text="使用上方当前数据创建规则；匹配后优先采用指定的中文或英文状态"
+                                       Style="{StaticResource RowDescriptionStyle}" />
+                            <Grid Grid.Row="2" Margin="0,12,0,0">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <StackPanel Orientation="Horizontal">
+                                    <Button Width="128" Margin="0,0,8,0" Content="当前数据设为中文" Style="{StaticResource InlineActionButtonStyle}" Click="OnCaptureChineseImeRuleClicked" />
+                                    <Button Width="128" Margin="0,0,8,0" Content="当前数据设为英文" Style="{StaticResource InlineActionButtonStyle}" Click="OnCaptureEnglishImeRuleClicked" />
+                                    <Button Width="88" Content="删除规则" Style="{StaticResource InlineActionButtonStyle}" Click="OnDeleteImeRuleClicked" />
+                                </StackPanel>
+                                <ListBox x:Name="ImeDetectionRulesList"
+                                         Grid.Row="1"
+                                         MinHeight="72"
+                                         MaxHeight="190"
+                                         Margin="0,10,0,0"
+                                         BorderThickness="1"
+                                         ScrollViewer.VerticalScrollBarVisibility="Auto">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Margin="8,6">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="Auto" /></Grid.ColumnDefinitions>
+                                                <StackPanel>
+                                                    <TextBlock Text="{Binding SignalText}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                                    <TextBlock Text="{Binding DetailText}" Margin="0,3,0,0" Foreground="#686868" FontSize="11" TextWrapping="Wrap" />
+                                                </StackPanel>
+                                                <Border Grid.Column="1" Padding="8,3" VerticalAlignment="Center" Background="#160F6CBD" CornerRadius="5">
+                                                    <TextBlock Text="{Binding ResultText}" Foreground="#0F5FA8" FontWeight="SemiBold" />
+                                                </Border>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </Grid>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
                 <TextBlock x:Name="ApplicationRulesSectionTitle" Text="应用规则" Style="{StaticResource SectionTitleStyle}" Visibility="Collapsed" />
                 <Border x:Name="ApplicationRulesSectionGroup" Style="{StaticResource SettingsGroupStyle}" Visibility="Collapsed">
                     <StackPanel>
@@ -1051,9 +1168,11 @@
 
                             <Grid Grid.Row="2" Grid.Column="1" Margin="8,8,0,0">
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="124" />
+                                    <ColumnDefinition Width="116" />
                                     <ColumnDefinition Width="8" />
-                                    <ColumnDefinition Width="136" />
+                                    <ColumnDefinition Width="128" />
+                                    <ColumnDefinition Width="8" />
+                                    <ColumnDefinition Width="108" />
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
                                 <Button x:Name="AddDetectedWindowToExcludedButton"
@@ -1067,14 +1186,74 @@
                                         Style="{StaticResource InlineActionButtonStyle}"
                                         IsEnabled="False"
                                         Click="OnAddDetectedWindowToNoRestoreClicked" />
+                                <Button x:Name="AddDetectedWindowAdvancedRuleButton"
+                                        Grid.Column="4"
+                                        Content="高级规则"
+                                        Style="{StaticResource InlineActionButtonStyle}"
+                                        IsEnabled="False"
+                                        Click="OnAddDetectedWindowAdvancedRuleClicked" />
                                 <TextBlock x:Name="DetectedWindowHintText"
-                                           Grid.Column="3"
+                                           Grid.Column="5"
                                            Margin="12,0,0,0"
                                            VerticalAlignment="Center"
                                            Foreground="#686868"
                                            FontSize="12"
                                            TextTrimming="CharacterEllipsis" />
                             </Grid>
+                        </Grid>
+
+                        <Border Height="1" Background="{DynamicResource SettingsDividerBrush}" Margin="60,0,0,0" />
+
+                        <Grid MinHeight="190" Margin="16,8,16,12">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="44" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <ui:SymbolIcon Symbol="DocumentSettings20" Style="{StaticResource RowIconStyle}" VerticalAlignment="Top" Margin="0,8,0,0" />
+                            <StackPanel Grid.Column="1" VerticalAlignment="Top" Margin="8,6,0,0">
+                                <TextBlock Text="高级规则" Style="{StaticResource RowTitleStyle}" />
+                                <TextBlock Text="按窗口标题、窗口类或控件类精确匹配，并独立设置行为和位置偏移"
+                                           Style="{StaticResource RowDescriptionStyle}" />
+                            </StackPanel>
+
+                            <ListBox x:Name="AdvancedApplicationRulesBox"
+                                     Grid.Row="1"
+                                     Grid.Column="1"
+                                     Height="104"
+                                     Margin="8,10,0,0"
+                                     BorderThickness="1"
+                                     SelectionChanged="OnAdvancedApplicationRuleSelectionChanged"
+                                     MouseDoubleClick="OnAdvancedApplicationRuleDoubleClicked">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="6,5">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding MatchText}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Text="{Binding ActionText}" Margin="0,2,0,0" FontSize="11" Foreground="#686868" TextTrimming="CharacterEllipsis" />
+                                            </StackPanel>
+                                            <TextBlock Grid.Column="1" Margin="12,0,2,0" VerticalAlignment="Center"
+                                                       Text="{Binding OffsetText}" Foreground="#0F6CBD" FontWeight="SemiBold" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+
+                            <StackPanel Grid.Row="2" Grid.Column="1" Margin="8,8,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
+                                <Button Width="76" Height="32" Content="新建" Click="OnNewAdvancedApplicationRuleClicked" />
+                                <Button x:Name="EditAdvancedApplicationRuleButton" Width="76" Height="32" Margin="8,0,0,0"
+                                        Content="编辑" IsEnabled="False" Click="OnEditAdvancedApplicationRuleClicked" />
+                                <Button x:Name="DeleteAdvancedApplicationRuleButton" Width="76" Height="32" Margin="8,0,0,0"
+                                        Content="删除" IsEnabled="False" Click="OnDeleteAdvancedApplicationRuleClicked" />
+                            </StackPanel>
                         </Grid>
 
                         <Border Height="1" Background="{DynamicResource SettingsDividerBrush}" Margin="60,0,0,0" />
@@ -1091,7 +1270,7 @@
                             <ui:SymbolIcon Symbol="AppsAddInOff24" Style="{StaticResource RowIconStyle}" VerticalAlignment="Top" Margin="0,8,0,0" />
                             <StackPanel Grid.Column="1" VerticalAlignment="Top" Margin="8,6,0,0">
                                 <TextBlock Text="完全排除" Style="{StaticResource RowTitleStyle}" />
-                                <TextBlock Text="不显示标记，也不恢复输入法状态；每行填写一个进程名"
+                                <TextBlock Text="不显示标记，也不记忆或恢复输入法状态；每行填写一个进程名"
                                            Style="{StaticResource RowDescriptionStyle}" />
                             </StackPanel>
                             <TextBox x:Name="ExcludedProcessNamesBox"
