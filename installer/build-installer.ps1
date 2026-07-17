@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "1.0.24",
+    [string]$Version = "1.0.25",
     [string]$PublishDir = (Join-Path $PSScriptRoot "..\src\ImeTool\bin\Release\net9.0-windows10.0.17763.0\win-x64\publish"),
     [string]$OutputDir = (Join-Path $PSScriptRoot "..\artifacts\installer"),
     [string]$IsccPath

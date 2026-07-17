@@ -147,6 +147,17 @@ public sealed class CaretService : ICaretService, IDisposable
         CaretSnapshot? msaaSnapshot = hasMsaaResult && msaaResult.Found
             ? msaaResult.Snapshot
             : null;
+        if (msaaSnapshot is CaretSnapshot msaaCandidate &&
+            _captureMode != CaretCaptureMode.Msaa)
+        {
+            msaaSnapshot = BrowserCaretCompatibilityPolicy.TryNormalizeMsaaCandidate(
+                environment,
+                hasAutomationResult ? automationResult.NativeCaretBoundsHint : null,
+                msaaCandidate,
+                out CaretSnapshot normalizedMsaa)
+                ? normalizedMsaa
+                : null;
+        }
         CaretSnapshot? jabSnapshot = needsJab && jabResult.Found
             ? jabResult.Snapshot
             : null;
@@ -394,6 +405,7 @@ public sealed class CaretService : ICaretService, IDisposable
     private static List<AutomationElement> GetCandidateElements(AutomationElement focused)
     {
         var candidates = new List<AutomationElement> { focused };
+        bool focusedIsActiveDescendant = focused.Current.ControlType == ControlType.ListItem;
 
         try
         {
@@ -428,6 +440,13 @@ public sealed class CaretService : ICaretService, IDisposable
                     break;
                 }
 
+                if (focusedIsActiveDescendant &&
+                    TryFindAssociatedEditableTextHost(parent, out AutomationElement associatedHost))
+                {
+                    candidates.Add(associatedHost);
+                    break;
+                }
+
                 if (IsPotentialTextHost(parent.Current.ControlType.ProgrammaticName))
                 {
                     candidates.Add(parent);
@@ -445,6 +464,54 @@ public sealed class CaretService : ICaretService, IDisposable
         }
 
         return candidates;
+    }
+
+    private static bool TryFindAssociatedEditableTextHost(
+        AutomationElement ancestor,
+        out AutomationElement textHost)
+    {
+        textHost = null!;
+        try
+        {
+            var controlTypeCondition = new OrCondition(
+                new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.Edit),
+                new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.ComboBox));
+            AutomationElementCollection descendants = ancestor.FindAll(
+                TreeScope.Descendants,
+                controlTypeCondition);
+            foreach (AutomationElement candidate in descendants)
+            {
+                if (candidate.Current.IsOffscreen ||
+                    !candidate.Current.IsKeyboardFocusable ||
+                    !TryGetElementBounds(candidate, out _))
+                {
+                    continue;
+                }
+
+                bool supportsTextPattern = candidate.TryGetCurrentPattern(
+                    TextPattern.Pattern,
+                    out _);
+                bool supportsWritableValue = candidate.TryGetCurrentPattern(
+                    ValuePattern.Pattern,
+                    out object valuePatternObject) &&
+                    valuePatternObject is ValuePattern valuePattern &&
+                    !valuePattern.Current.IsReadOnly;
+                if (!supportsTextPattern && !supportsWritableValue)
+                {
+                    continue;
+                }
+
+                textHost = candidate;
+                return true;
+            }
+        }
+        catch
+        {
+            // Browser accessibility trees can be replaced while a popup is
+            // opening or closing. The regular parent candidates remain usable.
+        }
+
+        return false;
     }
 
     private static bool IsPotentialTextHost(string? controlType)
@@ -473,6 +540,10 @@ public sealed class CaretService : ICaretService, IDisposable
 
         bool supportsTextPattern = element.TryGetCurrentPattern(TextPattern.Pattern, out object textPatternObject);
         bool supportsValuePattern = element.TryGetCurrentPattern(ValuePattern.Pattern, out object valuePatternObject);
+        bool valueIsKnown = TryGetValuePatternText(
+            valuePatternObject,
+            supportsValuePattern,
+            out string? valueText);
         bool? isReadOnly = GetIsReadOnly(
             textPatternObject,
             supportsTextPattern,
@@ -524,6 +595,8 @@ public sealed class CaretService : ICaretService, IDisposable
         if (TryGetTextPatternRect(
                 textPatternObject,
                 supportsTextPattern,
+                valueIsKnown,
+                valueText,
                 textHostBounds,
                 allowEmptyTextHostFallback,
                 out NativeMethods.RECT textRect))
@@ -624,6 +697,28 @@ public sealed class CaretService : ICaretService, IDisposable
         return null;
     }
 
+    private static bool TryGetValuePatternText(
+        object valuePatternObject,
+        bool supportsValuePattern,
+        out string? value)
+    {
+        value = null;
+        if (!supportsValuePattern || valuePatternObject is not ValuePattern valuePattern)
+        {
+            return false;
+        }
+
+        try
+        {
+            value = valuePattern.Current.Value;
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     private static string DescribeElement(AutomationElement element)
     {
         try
@@ -642,6 +737,8 @@ public sealed class CaretService : ICaretService, IDisposable
     private static bool TryGetTextPatternRect(
         object textPatternObject,
         bool supportsTextPattern,
+        bool valueIsKnown,
+        string? valueText,
         NativeMethods.RECT? textHostBounds,
         bool allowEmptyTextHostFallback,
         out NativeMethods.RECT rect)
@@ -649,6 +746,15 @@ public sealed class CaretService : ICaretService, IDisposable
         rect = default;
 
         if (!supportsTextPattern || textPatternObject is not TextPattern textPattern)
+        {
+            return false;
+        }
+
+        string documentText = textPattern.DocumentRange.GetText(2);
+        if (TextPatternCaretPolicy.IsPlaceholderDocument(
+                valueIsKnown,
+                valueText,
+                documentText))
         {
             return false;
         }
@@ -671,7 +777,10 @@ public sealed class CaretService : ICaretService, IDisposable
         }
 
         TextPatternRange collapsed = selections[0].Clone();
-        if (TryGetAdjacentCharacterCaret(collapsed, out NativeMethods.RECT adjacent) &&
+        if (TryGetAdjacentCharacterCaret(
+                collapsed,
+                textHostBounds,
+                out NativeMethods.RECT adjacent) &&
             TextPatternCaretPolicy.TrySelectCaretRect(
                 adjacent,
                 collapsedRect: null,
@@ -692,7 +801,6 @@ public sealed class CaretService : ICaretService, IDisposable
             return true;
         }
 
-        string documentText = textPattern.DocumentRange.GetText(1);
         if (allowEmptyTextHostFallback &&
             documentText.Length == 0 &&
             textHostBounds is NativeMethods.RECT host)
@@ -707,6 +815,7 @@ public sealed class CaretService : ICaretService, IDisposable
 
     private static bool TryGetAdjacentCharacterCaret(
         TextPatternRange collapsed,
+        NativeMethods.RECT? textHostBounds,
         out NativeMethods.RECT rect)
     {
         rect = default;
@@ -716,7 +825,11 @@ public sealed class CaretService : ICaretService, IDisposable
                 TextPatternRangeEndpoint.End,
                 TextUnit.Character,
                 1) > 0 &&
-            TryGetRangeEdge(nextCharacter, trailingEdge: false, out rect))
+            TryGetRangeEdge(
+                nextCharacter,
+                trailingEdge: false,
+                textHostBounds,
+                out rect))
         {
             return true;
         }
@@ -726,12 +839,17 @@ public sealed class CaretService : ICaretService, IDisposable
                    TextPatternRangeEndpoint.Start,
                    TextUnit.Character,
                    -1) < 0 &&
-               TryGetRangeEdge(previousCharacter, trailingEdge: true, out rect);
+               TryGetRangeEdge(
+                   previousCharacter,
+                   trailingEdge: true,
+                   textHostBounds,
+                   out rect);
     }
 
     private static bool TryGetRangeEdge(
         TextPatternRange range,
         bool trailingEdge,
+        NativeMethods.RECT? textHostBounds,
         out NativeMethods.RECT rect)
     {
         rect = default;
@@ -744,6 +862,13 @@ public sealed class CaretService : ICaretService, IDisposable
         System.Windows.Rect characterRect = trailingEdge
             ? rectangles[^1]
             : rectangles[0];
+        if (!TextPatternCaretPolicy.IsUsableAdjacentCharacterRect(
+                characterRect,
+                textHostBounds))
+        {
+            return false;
+        }
+
         return CaretGeometry.TryCreateFromTextEdge(characterRect, trailingEdge, out rect);
     }
 

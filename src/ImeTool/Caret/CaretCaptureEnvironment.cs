@@ -80,6 +80,41 @@ public static class CaretCaptureEnvironmentClassifier
 
 public static class BrowserCaretCompatibilityPolicy
 {
+    public static bool TryNormalizeMsaaCandidate(
+        CaretTargetEnvironment environment,
+        NativeMethods.RECT? textHostBounds,
+        CaretSnapshot candidate,
+        out CaretSnapshot normalized)
+    {
+        normalized = candidate;
+        if (environment is not (CaretTargetEnvironment.ChromiumBrowser or
+            CaretTargetEnvironment.FirefoxBrowser))
+        {
+            return true;
+        }
+
+        if (textHostBounds is not NativeMethods.RECT host)
+        {
+            // Firefox exposes OBJID_CARET as its primary accessibility path.
+            // Chromium frequently leaves a stale process-wide MSAA caret when
+            // focus moves between page controls, so wait for a UIA text-host
+            // anchor before accepting it there.
+            return environment == CaretTargetEnvironment.FirefoxBrowser;
+        }
+
+        if (!CaretGeometry.TryNormalizeBrowserMsaaRect(
+                candidate.ScreenRect,
+                host,
+                out NativeMethods.RECT normalizedRect))
+        {
+            normalized = default;
+            return false;
+        }
+
+        normalized = candidate with { ScreenRect = normalizedRect };
+        return true;
+    }
+
     public static bool TrySelect(
         CaretTargetEnvironment environment,
         CaretSnapshot? automationSnapshot,

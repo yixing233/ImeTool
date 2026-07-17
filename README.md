@@ -85,7 +85,7 @@ dotnet publish src\ImeTool\ImeTool.csproj `
   -o artifacts\installer-publish
 
 .\installer\build-installer.ps1 `
-  -Version 1.0.24 `
+  -Version 1.0.25 `
   -PublishDir artifacts\installer-publish `
   -OutputDir artifacts\installer
 ```

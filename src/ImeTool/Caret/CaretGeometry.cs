@@ -7,6 +7,7 @@ public static class CaretGeometry
     private const int MinimumReliableNativeCaretHeight = 8;
     private const int BoundsTolerance = 4;
     private const double MaximumEmptySingleLineHostHeight = 64;
+    private const int MaximumBrowserSingleLineHostHeight = 80;
 
     public static bool TryCreateExactRect(System.Windows.Rect source, out NativeMethods.RECT rect)
     {
@@ -123,6 +124,83 @@ public static class CaretGeometry
             Bottom = bottom
         };
         return true;
+    }
+
+    public static bool IsWithinTextHost(
+        NativeMethods.RECT caret,
+        NativeMethods.RECT host)
+    {
+        if (caret.Width <= 0 || caret.Height <= 0 ||
+            host.Width <= 0 || host.Height <= 0)
+        {
+            return false;
+        }
+
+        return caret.Left >= host.Left - BoundsTolerance &&
+               caret.Right <= host.Right + BoundsTolerance &&
+               caret.Top >= host.Top - BoundsTolerance &&
+               caret.Bottom <= host.Bottom + BoundsTolerance;
+    }
+
+    public static bool TryNormalizeBrowserMsaaRect(
+        NativeMethods.RECT caret,
+        NativeMethods.RECT host,
+        out NativeMethods.RECT normalized)
+    {
+        normalized = default;
+        if (caret.Width <= 0 || caret.Width > 32 ||
+            caret.Height < MinimumReliableNativeCaretHeight || caret.Height > 200 ||
+            host.Width <= 0 || host.Height <= 0)
+        {
+            return false;
+        }
+
+        bool xIsInside = caret.Left >= host.Left - BoundsTolerance &&
+                         caret.Left <= host.Right + BoundsTolerance;
+        int verticalOverlap = Math.Min(caret.Bottom, host.Bottom) -
+                              Math.Max(caret.Top, host.Top);
+        if (!xIsInside || verticalOverlap <= 0)
+        {
+            return false;
+        }
+
+        int width = Math.Max(1, Math.Min(caret.Width, host.Width));
+        int left = Math.Clamp(caret.Left, host.Left, Math.Max(host.Left, host.Right - width));
+        int top = caret.Top;
+        int height = caret.Height;
+        if (host.Height <= MaximumBrowserSingleLineHostHeight)
+        {
+            height = Math.Min(height, host.Height);
+            top = host.Top + ((host.Height - height) / 2);
+        }
+        else if (!IsWithinTextHost(caret, host))
+        {
+            return false;
+        }
+
+        normalized = new NativeMethods.RECT
+        {
+            Left = left,
+            Top = top,
+            Right = left + width,
+            Bottom = top + height
+        };
+        return true;
+    }
+
+    public static bool IsWholeTextHostRectangle(
+        System.Windows.Rect source,
+        NativeMethods.RECT host)
+    {
+        if (!IsUsableScreenRect(source) || host.Width <= 0 || host.Height <= 0)
+        {
+            return false;
+        }
+
+        return source.Left <= host.Left + BoundsTolerance &&
+               source.Right >= host.Right - BoundsTolerance &&
+               source.Top <= host.Top + BoundsTolerance &&
+               source.Bottom >= host.Bottom - BoundsTolerance;
     }
 
     private static bool IsUsableScreenRect(System.Windows.Rect source) =>

@@ -65,4 +65,66 @@ public sealed class TextPatternCaretPolicyTests
             out NativeMethods.RECT selected));
         Assert.Equal(collapsed, selected);
     }
+
+    [Fact]
+    public void Empty_Value_With_Placeholder_Text_Is_Rejected()
+    {
+        Assert.True(TextPatternCaretPolicy.IsPlaceholderDocument(
+            valueIsKnown: true,
+            value: string.Empty,
+            documentText: "Search settings"));
+    }
+
+    [Fact]
+    public void Empty_Value_With_Chrome_Object_Replacement_Text_Is_Rejected()
+    {
+        Assert.True(TextPatternCaretPolicy.IsPlaceholderDocument(
+            valueIsKnown: true,
+            value: string.Empty,
+            documentText: "\uFFFC"));
+    }
+
+    [Fact]
+    public void Actual_Text_Is_Not_Classified_As_Placeholder()
+    {
+        Assert.False(TextPatternCaretPolicy.IsPlaceholderDocument(
+            valueIsKnown: true,
+            value: "query",
+            documentText: "query"));
+    }
+
+    [Fact]
+    public void Whole_Control_Rectangle_Is_Not_Used_As_Adjacent_Character()
+    {
+        var host = new NativeMethods.RECT
+        {
+            Left = 79,
+            Top = 566,
+            Right = 479,
+            Bottom = 613
+        };
+
+        Assert.False(TextPatternCaretPolicy.IsUsableAdjacentCharacterRect(
+            new System.Windows.Rect(79, 566, 400, 47),
+            host));
+    }
+
+    [Fact]
+    public void Adjacent_Dom_Rectangle_Outside_Text_Host_Is_Rejected()
+    {
+        var host = new NativeMethods.RECT
+        {
+            Left = 391,
+            Top = 313,
+            Right = 1090,
+            Bottom = 379
+        };
+
+        Assert.False(TextPatternCaretPolicy.IsUsableAdjacentCharacterRect(
+            new System.Windows.Rect(505, 505, 1, 2),
+            host));
+        Assert.True(TextPatternCaretPolicy.IsUsableAdjacentCharacterRect(
+            new System.Windows.Rect(495, 333, 10, 26),
+            host));
+    }
 }
